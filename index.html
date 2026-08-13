@@ -2525,30 +2525,48 @@ window.buscarCNPJ = async function(inputId, prefix) {
   }
   if (statusEl) { statusEl.textContent = 'Buscando...'; statusEl.style.color = 'var(--text3)'; }
 
-  try {
-    const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpjRaw}`);
-    if (!res.ok) throw new Error(res.status === 404 ? 'CNPJ não encontrado.' : 'Erro ao consultar (tente novamente).');
-    const d = await res.json();
+  // Duas fontes públicas gratuitas — se a primeira falhar (instável por natureza,
+  // sem SLA), tenta a segunda automaticamente antes de desistir.
+  const fontes = [
+    { nome: 'BrasilAPI',    url: `https://brasilapi.com.br/api/cnpj/v1/${cnpjRaw}` },
+    { nome: 'MinhaReceita', url: `https://minhareceita.org/${cnpjRaw}` }
+  ];
 
-    const nomeEl = document.getElementById(prefix + '-nome');
-    const telEl  = document.getElementById(prefix + '-tel');
-    const endEl  = document.getElementById(prefix + '-endereco');
-    const cidEl  = document.getElementById(prefix + '-cidade');
-    const cepEl  = document.getElementById(prefix + '-cep');
-
-    if (nomeEl && !nomeEl.value) nomeEl.value = d.nome_fantasia || d.razao_social || '';
-    if (telEl && !telEl.value && d.ddd_telefone_1) telEl.value = d.ddd_telefone_1;
-    if (endEl) endEl.value = [d.logradouro, d.numero, d.bairro].filter(Boolean).join(', ');
-    if (cidEl) cidEl.value = [d.municipio, d.uf].filter(Boolean).join(' / ');
-    if (cepEl) cepEl.value = d.cep || '';
-
-    if (statusEl) {
-      const situacao = d.descricao_situacao_cadastral || '';
-      statusEl.textContent = `✓ ${d.razao_social || ''}${situacao ? ' · Situação: ' + situacao : ''}`;
-      statusEl.style.color = '#2E7D52';
+  let d = null, ultimoErro = null;
+  for (const fonte of fontes) {
+    try {
+      const res = await fetch(fonte.url);
+      if (res.status === 404) { ultimoErro = new Error('CNPJ não encontrado.'); continue; }
+      if (!res.ok) { ultimoErro = new Error(`${fonte.nome} indisponível no momento.`); continue; }
+      d = await res.json();
+      if (d?.message || d?.error) { d = null; ultimoErro = new Error(`${fonte.nome} indisponível no momento.`); continue; }
+      break; // deu certo, para por aqui
+    } catch(e) {
+      ultimoErro = new Error(`${fonte.nome} indisponível no momento.`);
     }
-  } catch(e) {
-    if (statusEl) { statusEl.textContent = e.message; statusEl.style.color = '#C0392B'; }
+  }
+
+  if (!d) {
+    if (statusEl) { statusEl.textContent = (ultimoErro?.message || 'Erro ao consultar.') + ' Preencha manualmente ou tente de novo em instantes.'; statusEl.style.color = '#C0392B'; }
+    return;
+  }
+
+  const nomeEl = document.getElementById(prefix + '-nome');
+  const telEl  = document.getElementById(prefix + '-tel');
+  const endEl  = document.getElementById(prefix + '-endereco');
+  const cidEl  = document.getElementById(prefix + '-cidade');
+  const cepEl  = document.getElementById(prefix + '-cep');
+
+  if (nomeEl && !nomeEl.value) nomeEl.value = d.nome_fantasia || d.razao_social || '';
+  if (telEl && !telEl.value && d.ddd_telefone_1) telEl.value = d.ddd_telefone_1;
+  if (endEl) endEl.value = [d.logradouro, d.numero, d.bairro].filter(Boolean).join(', ');
+  if (cidEl) cidEl.value = [d.municipio, d.uf].filter(Boolean).join(' / ');
+  if (cepEl) cepEl.value = d.cep || '';
+
+  if (statusEl) {
+    const situacao = d.descricao_situacao_cadastral || '';
+    statusEl.textContent = `✓ ${d.razao_social || ''}${situacao ? ' · Situação: ' + situacao : ''}`;
+    statusEl.style.color = '#2E7D52';
   }
 };
 
