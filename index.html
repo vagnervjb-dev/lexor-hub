@@ -580,7 +580,10 @@ tbody tr:hover td{background:var(--bg3);}
     <div class="page" id="page-contabilidades">
       <div class="page-header">
         <div><h2>Contabilidades</h2><p>Parceiros e suas carteiras de clientes</p></div>
-        <button class="btn btn-accent" onclick="openModal('modal-nova-conta')">+ Nova contabilidade</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="corrigirVinculosAntigos()">🔧 Corrigir vínculos antigos</button>
+          <button class="btn btn-accent" onclick="openModal('modal-nova-conta')">+ Nova contabilidade</button>
+        </div>
       </div>
       <div id="contabilidades-lista">
         <div style="text-align:center;padding:32px;color:var(--text3);font-size:13px">Carregando contabilidades...</div>
@@ -1431,7 +1434,9 @@ function atualizarContadorProcessos() {
 window.salvarNovoProcessoFirebase = async function() {
   const empresa       = document.getElementById("np-empresa").value.trim();
   const responsavel   = document.getElementById("np-responsavel").value.trim();
-  const contabilidade = document.getElementById("np-contabilidade").value;
+  const contaSel       = document.getElementById("np-contabilidade");
+  const contabilidadeId   = contaSel.value;
+  const contabilidade     = contaSel.selectedOptions[0]?.dataset.nome || contaSel.selectedOptions[0]?.textContent || '';
   const tipo          = document.getElementById("np-tipo").value;
   const respLexor     = document.getElementById("np-resp-lexor").value;
   const obs           = document.getElementById("np-obs").value.trim();
@@ -1439,6 +1444,11 @@ window.salvarNovoProcessoFirebase = async function() {
 
   if (!empresa) {
     alertEl.textContent = "Preencha o nome da empresa.";
+    alertEl.classList.remove("hidden");
+    return;
+  }
+  if (!contabilidadeId) {
+    alertEl.textContent = "Selecione a contabilidade parceira.";
     alertEl.classList.remove("hidden");
     return;
   }
@@ -1504,7 +1514,7 @@ window.salvarNovoProcessoFirebase = async function() {
     etapaIniciadaEm: criadoEm,
     criadoPor: window._user?.uid || "anonimo",
     criadoPorNome,
-    contabilidadeId: window._user?.uid || "anonimo",
+    contabilidadeId,
     ...dadosEmpresa,
     socios,
     saude: dadosSaude,
@@ -2313,6 +2323,46 @@ window.marcarTarefa = async function(el, processoId, idx) {
     console.warn('Erro ao salvar tarefa:', e.message);
   }
   window.atualizarBadgeTarefas();
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MIGRAÇÃO — preenche contabilidadeId em processos antigos (só nome, sem ID)
+// ═══════════════════════════════════════════════════════════════════════════
+window.corrigirVinculosAntigos = async function() {
+  if (!confirm('Isso vai conferir todos os processos e preencher o vínculo por ID onde estiver faltando ou errado. Continuar?')) return;
+  try {
+    const [snapProcessos, snapUsuarios] = await Promise.all([
+      getDocs(collection(db, 'processos')),
+      getDocs(collection(db, 'Usuarios'))
+    ]);
+
+    const contabilidadesPorNome = {};
+    snapUsuarios.docs.forEach(d => {
+      const u = d.data();
+      if (u.role === 'contabilidade' && u.contabilidade) contabilidadesPorNome[u.contabilidade] = d.id;
+    });
+
+    let corrigidos = 0, semCorrespondencia = [];
+    for (const docSnap of snapProcessos.docs) {
+      const p = docSnap.data();
+      const idCorreto = contabilidadesPorNome[p.contabilidade];
+      if (!idCorreto) {
+        if (p.contabilidade) semCorrespondencia.push(p.empresa + ' (' + p.contabilidade + ')');
+        continue;
+      }
+      if (p.contabilidadeId !== idCorreto) {
+        await updateDoc(doc(db, 'processos', docSnap.id), { contabilidadeId: idCorreto });
+        corrigidos++;
+      }
+    }
+
+    let msg = `${corrigidos} processo(s) corrigido(s).`;
+    if (semCorrespondencia.length) msg += `\n\nSem contabilidade cadastrada correspondente:\n- ${semCorrespondencia.join('\n- ')}`;
+    alert(msg);
+    carregarDashboard();
+  } catch(e) {
+    alert('Erro na correção: ' + e.message);
+  }
 };
 
 async function carregarContabilidades() {
@@ -3351,28 +3401,35 @@ window.openModal = async function(id) {
     if (!sel) return;
     try {
       const snap = await getDocs(collection(db, 'Usuarios'));
-      const contas = [];
+      const contas = [];   // { id, nome }
       const admins = [];
       snap.docs.forEach(d => {
         const u = d.data();
         if (u.role === 'contabilidade' && u.contabilidade) {
-          contas.push(u.contabilidade);
+          contas.push({ id: d.id, nome: u.contabilidade });
         }
         if (u.role === 'admin' && u.nome) {
           admins.push(u.nome);
         }
       });
-      if (contas.length === 0) {
-        contas.push('Oliveira & Associados', 'Ferreira Contabilidade', 'Beta Assessoria', 'Santos & Lima');
-      }
-      sel.innerHTML = contas.map(c => `<option value="${c}">${c}</option>`).join('');
+
+      // Contabilidade só pode criar processo em nome dela mesma
+      const minhasContas = window._user?.role === 'contabilidade'
+        ? contas.filter(c => c.id === window._user.uid)
+        : contas;
+
+      sel.innerHTML = minhasContas.length > 0
+        ? minhasContas.map(c => `<option value="${c.id}" data-nome="${c.nome.replace(/"/g,'&quot;')}">${c.nome}</option>`).join('')
+        : '<option value="">Nenhuma contabilidade cadastrada</option>';
+      if (window._user?.role === 'contabilidade') sel.disabled = true;
+
       if (selResp) {
         selResp.innerHTML = admins.length > 0
           ? admins.map(n => `<option value="${n}">${n}</option>`).join('')
           : '<option value="">Nenhum admin Lexor cadastrado</option>';
       }
     } catch(e) {
-      sel.innerHTML = '<option>Oliveira & Associados</option><option>Ferreira Contabilidade</option><option>Beta Assessoria</option><option>Santos & Lima</option>';
+      sel.innerHTML = `<option value="">Erro ao carregar: ${e.message}</option>`;
       if (selResp) selResp.innerHTML = '<option value="">Erro ao carregar</option>';
     }
   }
