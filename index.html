@@ -254,6 +254,55 @@ tbody tr:hover td{background:var(--bg3);}
 .empty-state p{font-size:12.5px;}
 .alert-banner{background:rgba(200,116,0,0.08);border:1px solid rgba(200,116,0,0.2);border-radius:var(--r-sm);padding:10px 12px;font-size:12px;color:var(--amber);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
 .hidden{display:none !important;}
+/* ═══════════════════════════════════════════════════════════════════
+   RESPONSIVO — celular e tablet
+   ═══════════════════════════════════════════════════════════════════ */
+#sidebar-overlay{display:none;}
+
+@media (max-width: 860px) {
+  #mobile-menu-btn{display:flex !important;align-items:center;justify-content:center;}
+
+  .sidebar{
+    position:fixed; top:0; left:0; z-index:200;
+    transform:translateX(-100%);
+    transition:transform .2s ease;
+    box-shadow:0 0 40px rgba(0,0,0,0.5);
+  }
+  .sidebar.open{ transform:translateX(0); }
+
+  #sidebar-overlay.open{
+    display:block; position:fixed; inset:0; z-index:150;
+    background:rgba(0,0,0,0.5);
+  }
+
+  .main{ width:100%; }
+  .topbar{ padding:12px 14px; flex-wrap:wrap; gap:8px; }
+  .topbar-title{ font-size:15px; }
+  #save-indicator span:last-child{ display:none; } /* esconde texto "Salvo localmente", mantém a bolinha */
+  #topbar-role-label{ display:none; }
+
+  .content{ padding:14px !important; }
+  .page-header{ flex-direction:column; align-items:flex-start !important; gap:10px; }
+  .page-header h2{ font-size:18px; }
+
+  .metrics{ grid-template-columns:1fr 1fr !important; }
+  .form-grid{ grid-template-columns:1fr !important; }
+
+  .responsive-grid-2col{ grid-template-columns:1fr !important; }
+  .responsive-grid-sidebar{ grid-template-columns:1fr !important; height:auto !important; }
+  .responsive-grid-sidebar > div:first-child{ max-height:220px; overflow-y:auto; }
+
+  .modal{ width:94vw !important; padding:16px; }
+  .kol{ min-width:82vw; }
+
+  .conta-card{ flex-direction:column; align-items:flex-start !important; gap:10px; }
+  .conta-stats{ width:100%; justify-content:space-between; }
+}
+
+@media (max-width: 480px) {
+  .metrics{ grid-template-columns:1fr !important; }
+}
+
 </style>
 </head>
 <body>
@@ -280,6 +329,7 @@ tbody tr:hover td{background:var(--bg3);}
 <div id="admin-app" style="display:none;width:100%;height:100vh;">
 
 <!-- SIDEBAR -->
+<div id="sidebar-overlay" onclick="toggleSidebar()"></div>
 <aside class="sidebar" id="sidebar">
   <div class="sb-logo">
     <div class="wordmark">Lexor<span style="color:#B8952A">Hub</span></div>
@@ -321,9 +371,12 @@ tbody tr:hover td{background:var(--bg3);}
 <!-- MAIN -->
 <div class="main">
   <div class="topbar">
-    <div>
-      <span class="topbar-title" id="topbar-title">Dashboard</span>
-      <span class="topbar-sub" id="topbar-sub"></span>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button id="mobile-menu-btn" onclick="toggleSidebar()" style="display:none;background:none;border:1px solid var(--border);border-radius:6px;width:34px;height:34px;font-size:16px;cursor:pointer;color:var(--text);flex-shrink:0;">☰</button>
+      <div>
+        <span class="topbar-title" id="topbar-title">Dashboard</span>
+        <span class="topbar-sub" id="topbar-sub"></span>
+      </div>
     </div>
     <div class="topbar-right">
       <div style="font-size:11px;color:#A89E7E;font-family:'DM Mono',monospace;display:flex;align-items:center;gap:6px;" id="save-indicator">
@@ -395,7 +448,7 @@ tbody tr:hover td{background:var(--bg3);}
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+      <div class="responsive-grid-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
         <div class="card">
           <div class="card-title">Processos por etapa</div>
           <div style="display:flex;flex-direction:column;gap:8px;" id="dash-por-etapa">
@@ -552,7 +605,7 @@ tbody tr:hover td{background:var(--bg3);}
       <div class="page-header">
         <div><h2>Comunicação</h2><p>Chat interno por processo — sem depender de WhatsApp</p></div>
       </div>
-      <div style="display:grid;grid-template-columns:240px 1fr;gap:14px;height:calc(100vh - 200px);">
+      <div class="responsive-grid-sidebar" style="display:grid;grid-template-columns:240px 1fr;gap:14px;height:calc(100vh - 200px);">
         <div class="card" style="overflow-y:auto;margin-bottom:0;">
           <div class="card-title">Conversas</div>
           <div style="display:flex;flex-direction:column;gap:4px;" id="chat-lista-conversas">
@@ -599,7 +652,7 @@ tbody tr:hover td{background:var(--bg3);}
         <div><h2>Fluxos</h2><p>Crie e edite os fluxos de etapas para cada tipo de processo</p></div>
         <button class="btn btn-accent" onclick="openModal('modal-novo-fluxo')">+ Novo fluxo</button>
       </div>
-      <div style="display:grid;grid-template-columns:220px 1fr;gap:14px;">
+      <div class="responsive-grid-sidebar" style="display:grid;grid-template-columns:220px 1fr;gap:14px;">
 
         <!-- Lista lateral de fluxos -->
         <div style="display:flex;flex-direction:column;gap:10px;">
@@ -697,7 +750,7 @@ tbody tr:hover td{background:var(--bg3);}
         <div class="metric"><div class="metric-val" id="rel-atrasados" style="color:var(--red)">—</div><div class="metric-lbl">Atrasados</div><div class="metric-sub">SLA vencido</div></div>
         <div class="metric accent-card" style="color:#F5EDD5"><div class="metric-val accent" id="rel-concluidos">—</div><div class="metric-lbl" style="color:rgba(245,237,213,0.55)">Concluídos</div><div class="metric-sub" style="color:rgba(245,237,213,0.4)">total</div></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+      <div class="responsive-grid-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
         <div class="card">
           <div class="card-title">Processos por contabilidade</div>
           <div id="rel-por-contabilidade">
@@ -759,7 +812,7 @@ tbody tr:hover td{background:var(--bg3);}
       <button class="tab-btn" onclick="ptab('historico',this)">Histórico</button>
     </div>
     <div id="ptab-visao">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+      <div class="responsive-grid-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
         <div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px 12px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Empresa</div><div style="font-size:13px;font-weight:500">Mercado Bom Ltda</div></div>
         <div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px 12px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Responsável</div><div style="font-size:13px;font-weight:500">João Silva</div></div>
         <div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px 12px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Etapa atual</div><div style="font-size:13px;font-weight:500;color:var(--amber)">Junta Comercial</div></div>
@@ -3989,11 +4042,21 @@ const pages = {
   contabilidades:'Contabilidades', fluxos:'Fluxos',
   usuarios:'Usuários', relatorios:'Relatórios', faturamento:'Faturamento'
 };
+window.toggleSidebar = function() {
+  document.getElementById('sidebar')?.classList.toggle('open');
+  document.getElementById('sidebar-overlay')?.classList.toggle('open');
+};
+
 function nav(page, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   const el = document.getElementById('page-' + page);
   if (el) el.classList.add('active');
   document.getElementById('topbar-title').textContent = pages[page] || page;
+  // Fecha o menu ao navegar, no celular
+  if (window.innerWidth <= 860) {
+    document.getElementById('sidebar')?.classList.remove('open');
+    document.getElementById('sidebar-overlay')?.classList.remove('open');
+  }
   // Sempre atualiza o sidebar — com ou sem btn
   document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('active'));
   if (btn) {
