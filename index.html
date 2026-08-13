@@ -582,6 +582,7 @@ tbody tr:hover td{background:var(--bg3);}
         <div><h2>Contabilidades</h2><p>Parceiros e suas carteiras de clientes</p></div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-ghost btn-sm" onclick="corrigirVinculosAntigos()">🔧 Corrigir vínculos antigos</button>
+          <button class="btn btn-ghost btn-sm" onclick="numerarContabilidadesAntigas()">🔢 Numerar contabilidades antigas</button>
           <button class="btn btn-accent" onclick="openModal('modal-nova-conta')">+ Nova contabilidade</button>
         </div>
       </div>
@@ -2365,6 +2366,36 @@ window.corrigirVinculosAntigos = async function() {
   }
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// MIGRAÇÃO — atribui número sequencial às contabilidades que ainda não têm
+// ═══════════════════════════════════════════════════════════════════════════
+window.numerarContabilidadesAntigas = async function() {
+  if (!confirm('Isso vai atribuir um número sequencial (Nº 1, Nº 2...) para toda contabilidade que ainda não tiver, na ordem em que foram cadastradas. Continuar?')) return;
+  try {
+    const snap = await getDocs(collection(db, 'Usuarios'));
+    const contas = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(u => u.role === 'contabilidade')
+      .sort((a, b) => new Date(a.criadoEm || 0) - new Date(b.criadoEm || 0));
+
+    let maiorCodigo = 0;
+    contas.forEach(c => { if (typeof c.codigo === 'number' && c.codigo > maiorCodigo) maiorCodigo = c.codigo; });
+
+    let atribuidos = 0;
+    for (const c of contas) {
+      if (typeof c.codigo === 'number') continue;
+      maiorCodigo++;
+      await updateDoc(doc(db, 'Usuarios', c.id), { codigo: maiorCodigo });
+      atribuidos++;
+    }
+
+    alert(`${atribuidos} contabilidade(s) numerada(s).`);
+    carregarContabilidades();
+  } catch(e) {
+    alert('Erro ao numerar: ' + e.message);
+  }
+};
+
 async function carregarContabilidades() {
   const lista = document.getElementById('contabilidades-lista');
   if (!lista) return;
@@ -2391,15 +2422,16 @@ async function carregarContabilidades() {
       const nome = c.contabilidade || c.nome || '—';
       const email = c.email || '—';
       const tel = c.telefone || '';
-      const procs = processos.filter(p => p.contabilidade === nome);
+      const codigo = c.codigo || null;
+      const procs = processos.filter(p => p.contabilidadeId === c.id || (!p.contabilidadeId && p.contabilidade === nome));
       const ativos = procs.filter(p => p.status !== 'concluido').length;
       const concluidos = procs.filter(p => p.status === 'concluido').length;
       const atrasados = procs.filter(p => p.status === 'atrasado').length;
       const atrasoColor = atrasados > 0 ? (atrasados > 1 ? 'var(--red)' : 'var(--amber)') : 'var(--green)';
 
-      return `<div class="conta-card" onclick='window.abrirDetalheContabilidade(${JSON.stringify({id:c.id, nome, email, tel, responsavel: c.responsavel || '', cnpj: c.cnpj || '', endereco: c.endereco || '', cidade: c.cidade || '', cep: c.cep || '', ativos, concluidos, atrasados})})'>
+      return `<div class="conta-card" onclick='window.abrirDetalheContabilidade(${JSON.stringify({id:c.id, nome, email, tel, codigo, responsavel: c.responsavel || '', cnpj: c.cnpj || '', endereco: c.endereco || '', cidade: c.cidade || '', cep: c.cep || '', ativos, concluidos, atrasados})})'>
         <div class="conta-info">
-          <strong>${nome}</strong>
+          <strong>${codigo ? `<span style="color:var(--text3);font-weight:400;font-family:'DM Mono',monospace;font-size:12px">Nº ${codigo} · </span>` : ''}${nome}</strong>
           <small>${email}${tel ? ' · ' + tel : ''}</small>
         </div>
         <div class="conta-stats">
@@ -2419,7 +2451,7 @@ async function carregarContabilidades() {
 // ═══════════════════════════════════════════════════════════════════════════
 window.abrirDetalheContabilidade = function(c) {
   window._contaAtual = c;
-  document.getElementById('dc-titulo').textContent = c.nome;
+  document.getElementById('dc-titulo').textContent = c.codigo ? `Nº ${c.codigo} · ${c.nome}` : c.nome;
   document.getElementById('dc-nome').value = c.nome === '—' ? '' : c.nome;
   document.getElementById('dc-email').value = c.email === '—' ? '' : c.email;
   document.getElementById('dc-tel').value = c.tel || '';
@@ -2578,6 +2610,15 @@ window.criarContabilidade = async function() {
   if (btn) { btn.textContent = 'Criando...'; btn.disabled = true; }
 
   try {
+    // 0. Calcula o próximo número sequencial de contabilidade
+    const snapExistentes = await getDocs(collection(db, 'Usuarios'));
+    let maiorCodigo = 0;
+    snapExistentes.docs.forEach(d => {
+      const u = d.data();
+      if (u.role === 'contabilidade' && typeof u.codigo === 'number' && u.codigo > maiorCodigo) maiorCodigo = u.codigo;
+    });
+    const codigo = maiorCodigo + 1;
+
     // 1. Cria usuário Firebase com senha temporária
     const senhaTemp = 'Lx@' + Math.random().toString(36).slice(2, 12) + '!';
     const res = await fetch(
@@ -2605,6 +2646,7 @@ window.criarContabilidade = async function() {
       email,
       role: 'contabilidade',
       contabilidade: nome,  // chave de vinculação com processos
+      codigo,
       telefone: tel,
       cnpj,
       endereco,
