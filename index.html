@@ -292,6 +292,7 @@ tbody tr:hover td{background:var(--bg3);}
     <button class="sb-item" onclick="nav('tarefas',this)"><span class="si-icon">✓</span> Tarefas <span class="si-badge hidden" id="sidebar-tarefas-badge">0</span></button>
     <button class="sb-item" onclick="nav('documentos',this)"><span class="si-icon">📄</span> Documentos</button>
     <button class="sb-item" onclick="nav('chat',this)"><span class="si-icon">💬</span> Comunicação <span class="si-badge hidden" id="sidebar-comunicacao-badge">0</span></button>
+    <button class="sb-item hidden" id="nav-faturamento-gerencial" onclick="nav('faturamento',this)"><span class="si-icon">💰</span> Faturamento</button>
   </div>
   <div class="sb-section" id="admin-only-nav">
     <div class="sb-label">Administração</div>
@@ -299,6 +300,7 @@ tbody tr:hover td{background:var(--bg3);}
     <button class="sb-item" onclick="nav('fluxos',this)"><span class="si-icon">⇌</span> Fluxos</button>
     <button class="sb-item" onclick="nav('usuarios',this)"><span class="si-icon">👤</span> Usuários</button>
     <button class="sb-item" onclick="nav('relatorios',this)"><span class="si-icon">↗</span> Relatórios</button>
+    <button class="sb-item" onclick="nav('faturamento',this)"><span class="si-icon">💰</span> Faturamento</button>
   </div>
   <div class="sb-role-switch">
     <button id="switch-role-btn" class="role-btn" onclick="switchRole()">
@@ -711,6 +713,28 @@ tbody tr:hover td{background:var(--bg3);}
       </div>
     </div>
 
+    <!-- ═══ FATURAMENTO ═══ -->
+    <div class="page" id="page-faturamento">
+      <div class="page-header">
+        <div><h2>Faturamento</h2><p id="fat-subtitulo">Processos concluídos no período</p></div>
+        <input type="month" id="fat-mes" class="btn btn-ghost btn-sm" style="cursor:pointer" onchange="carregarFaturamento()"/>
+      </div>
+      <div class="metrics" id="fat-metrics">
+        <div class="metric"><div class="metric-val" id="fat-qtd">—</div><div class="metric-lbl">Processos concluídos</div><div class="metric-sub">no mês selecionado</div></div>
+        <div class="metric accent-card" style="color:#F5EDD5"><div class="metric-val accent" id="fat-total">—</div><div class="metric-lbl" style="color:rgba(245,237,213,0.55)">Total do período</div><div class="metric-sub" style="color:rgba(245,237,213,0.4)">soma de todos os processos</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title" id="fat-tabela-titulo">Por contabilidade</div>
+        <div id="fat-tabela">
+          <div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Carregando...</div>
+        </div>
+      </div>
+      <div class="card" id="fat-detalhe-card" style="display:none;">
+        <div class="card-title">Processos concluídos no período</div>
+        <div id="fat-detalhe-lista"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -1055,6 +1079,13 @@ tbody tr:hover td{background:var(--bg3);}
       <div class="fg full"><label>Endereço</label><input id="nc-endereco" placeholder="Rua, número, bairro"/></div>
       <div class="fg"><label>Cidade / UF</label><input id="nc-cidade" placeholder="São Paulo / SP"/></div>
       <div class="fg"><label>CEP</label><input id="nc-cep" placeholder="00000-000"/></div>
+      <div class="fg"><label>Valor por processo (R$)</label><input id="nc-valor" type="number" min="0" step="0.01" placeholder="450.00"/></div>
+      <div class="fg"><label>Nível de acesso</label>
+        <select id="nc-nivel-acesso">
+          <option value="operacional">Operacional</option>
+          <option value="gerencial">Gerencial (vê faturamento)</option>
+        </select>
+      </div>
     </div>
     <div style="background:rgba(184,149,42,0.08);border:1px solid rgba(184,149,42,0.2);border-radius:6px;padding:10px 12px;font-size:12px;color:#6B6448;margin-top:10px;">
       📧 Um <strong>e-mail de convite</strong> será enviado para a contabilidade definir sua senha e acessar o sistema.
@@ -1092,6 +1123,13 @@ tbody tr:hover td{background:var(--bg3);}
       <div class="fg full"><label>Endereço</label><input id="dc-endereco" placeholder="Rua, número, bairro"/></div>
       <div class="fg"><label>Cidade / UF</label><input id="dc-cidade" placeholder="São Paulo / SP"/></div>
       <div class="fg"><label>CEP</label><input id="dc-cep" placeholder="00000-000"/></div>
+      <div class="fg"><label>Valor por processo (R$)</label><input id="dc-valor" type="number" min="0" step="0.01" placeholder="450.00"/></div>
+      <div class="fg"><label>Nível de acesso</label>
+        <select id="dc-nivel-acesso">
+          <option value="operacional">Operacional</option>
+          <option value="gerencial">Gerencial (vê faturamento)</option>
+        </select>
+      </div>
     </div>
     <div id="dc-alert" class="hidden" style="font-size:12px;color:#C0392B;margin-top:8px;background:#FDEAEA;border:1px solid #F0BEBE;border-radius:5px;padding:8px 12px;"></div>
     <div id="dc-reenvio-status" class="hidden" style="font-size:12px;color:#2E7D52;margin-top:8px;background:#EAF3DE;border:1px solid #C9E0B0;border-radius:5px;padding:8px 12px;"></div>
@@ -1274,6 +1312,10 @@ function mostrarApp(role) {
     if (switchBtn) switchBtn.style.display = "none";
     const limparBtn = document.getElementById("limpar-dados-btn");
     if (limparBtn) limparBtn.style.display = "none";
+
+    // Faturamento só aparece para contabilidade com nível de acesso Gerencial
+    const navFatGerencial = document.getElementById("nav-faturamento-gerencial");
+    if (navFatGerencial) navFatGerencial.classList.toggle("hidden", window._user?.nivelAcesso !== "gerencial");
 
     // Personaliza o Dashboard para contabilidade
     const dashHeader = document.querySelector('#page-dashboard .page-header p');
@@ -1988,6 +2030,107 @@ window.excluirDocumento = async function(id) {
 // ═══════════════════════════════════════════════════════════════════════════
 // RELATÓRIOS — dados reais do Firestore
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// FATURAMENTO — processos concluídos no mês, por contabilidade
+// ═══════════════════════════════════════════════════════════════════════════
+window.carregarFaturamento = async function() {
+  const mesInput = document.getElementById('fat-mes');
+  if (!mesInput.value) {
+    const hoje = new Date();
+    mesInput.value = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+  }
+  const [ano, mes] = mesInput.value.split('-').map(Number);
+  const inicio = new Date(ano, mes - 1, 1);
+  const fim = new Date(ano, mes, 1);
+
+  const nomeMes = inicio.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  document.getElementById('fat-subtitulo').textContent = `Processos concluídos em ${nomeMes}`;
+
+  const souGerencial = window._user?.role === 'contabilidade';
+  const minhaContaId = window._user?.uid;
+
+  try {
+    const [snapProcessos, snapUsuarios] = await Promise.all([
+      getDocs(collection(db, 'processos')),
+      getDocs(collection(db, 'Usuarios'))
+    ]);
+
+    const contabilidadesPorId = {};
+    snapUsuarios.docs.forEach(d => {
+      const u = d.data();
+      if (u.role === 'contabilidade') contabilidadesPorId[d.id] = u;
+    });
+
+    let concluidosNoMes = snapProcessos.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(p => p.status === 'concluido' && p.concluidoEm)
+      .filter(p => { const dt = new Date(p.concluidoEm); return dt >= inicio && dt < fim; });
+
+    if (souGerencial) {
+      concluidosNoMes = concluidosNoMes.filter(p => p.contabilidadeId === minhaContaId);
+      document.getElementById('fat-tabela-titulo').textContent = 'Sua fatura do período';
+    } else {
+      document.getElementById('fat-tabela-titulo').textContent = 'Por contabilidade';
+    }
+
+    document.getElementById('fat-qtd').textContent = concluidosNoMes.length;
+
+    // Agrupa por contabilidade e calcula valor (usando o valor cadastrado em cada uma)
+    const porConta = {};
+    concluidosNoMes.forEach(p => {
+      const contaId = p.contabilidadeId || 'sem-id';
+      const dadosConta = contabilidadesPorId[contaId];
+      const nome = dadosConta?.contabilidade || p.contabilidade || 'Sem contabilidade';
+      const valorUnit = dadosConta?.valorPorProcesso || 0;
+      if (!porConta[contaId]) porConta[contaId] = { nome, valorUnit, qtd: 0 };
+      porConta[contaId].qtd++;
+    });
+
+    const totalGeral = Object.values(porConta).reduce((s, c) => s + c.qtd * c.valorUnit, 0);
+    document.getElementById('fat-total').textContent = totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    const tabelaEl = document.getElementById('fat-tabela');
+    const entradas = Object.values(porConta).sort((a, b) => (b.qtd * b.valorUnit) - (a.qtd * a.valorUnit));
+    if (entradas.length === 0) {
+      tabelaEl.innerHTML = '<div style="padding:20px;color:var(--text3);font-size:12px;text-align:center">Nenhum processo concluído neste período.</div>';
+    } else {
+      tabelaEl.innerHTML = `<table style="width:100%;font-size:12.5px;border-collapse:collapse">
+        <thead><tr>
+          ${souGerencial ? '' : '<th style="text-align:left;padding:0 8px 8px;font-size:10px;color:var(--text3);font-family:\'DM Mono\',monospace;border-bottom:1px solid var(--border)">Contabilidade</th>'}
+          <th style="text-align:center;padding:0 8px 8px;font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;border-bottom:1px solid var(--border)">Processos concluídos</th>
+          <th style="text-align:center;padding:0 8px 8px;font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;border-bottom:1px solid var(--border)">Valor unitário</th>
+          <th style="text-align:right;padding:0 8px 8px;font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;border-bottom:1px solid var(--border)">Total</th>
+        </tr></thead>
+        <tbody>${entradas.map(c => `
+          <tr>
+            ${souGerencial ? '' : `<td style="padding:10px 8px;color:var(--text)">${c.nome}</td>`}
+            <td style="padding:10px 8px;text-align:center;font-family:'DM Mono',monospace;font-weight:500">${c.qtd}</td>
+            <td style="padding:10px 8px;text-align:center;color:var(--text3)">${c.valorUnit.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+            <td style="padding:10px 8px;text-align:right;font-family:'DM Mono',monospace;font-weight:600">${(c.qtd * c.valorUnit).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+    }
+
+    // Lista detalhada — só faz sentido quando é uma única contabilidade (visão gerencial) ou poucos itens
+    const detalheCard = document.getElementById('fat-detalhe-card');
+    const detalheLista = document.getElementById('fat-detalhe-lista');
+    if (souGerencial && concluidosNoMes.length > 0) {
+      detalheCard.style.display = '';
+      detalheLista.innerHTML = concluidosNoMes
+        .sort((a, b) => new Date(b.concluidoEm) - new Date(a.concluidoEm))
+        .map(p => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12.5px;">
+          <div><strong>${p.empresa}</strong><span style="color:var(--text3)"> · ${p.tipo || ''}</span></div>
+          <div style="color:var(--text3)">${new Date(p.concluidoEm).toLocaleDateString('pt-BR')}</div>
+        </div>`).join('');
+    } else {
+      detalheCard.style.display = 'none';
+    }
+  } catch(e) {
+    document.getElementById('fat-tabela').innerHTML = `<div style="padding:16px;color:var(--red);font-size:12px">Erro ao carregar: ${e.message}</div>`;
+  }
+};
+
 window.carregarRelatorios = async function() {
   try {
     const snap = await getDocs(collection(db, 'processos'));
@@ -2429,7 +2572,7 @@ async function carregarContabilidades() {
       const atrasados = procs.filter(p => p.status === 'atrasado').length;
       const atrasoColor = atrasados > 0 ? (atrasados > 1 ? 'var(--red)' : 'var(--amber)') : 'var(--green)';
 
-      return `<div class="conta-card" onclick='window.abrirDetalheContabilidade(${JSON.stringify({id:c.id, nome, email, tel, codigo, responsavel: c.responsavel || '', cnpj: c.cnpj || '', endereco: c.endereco || '', cidade: c.cidade || '', cep: c.cep || '', ativos, concluidos, atrasados})})'>
+      return `<div class="conta-card" onclick='window.abrirDetalheContabilidade(${JSON.stringify({id:c.id, nome, email, tel, codigo, responsavel: c.responsavel || '', cnpj: c.cnpj || '', endereco: c.endereco || '', cidade: c.cidade || '', cep: c.cep || '', valorPorProcesso: c.valorPorProcesso || 0, nivelAcesso: c.nivelAcesso || 'operacional', ativos, concluidos, atrasados})})'>
         <div class="conta-info">
           <strong>${codigo ? `<span style="color:var(--text3);font-weight:400;font-family:'DM Mono',monospace;font-size:12px">Nº ${codigo} · </span>` : ''}${nome}</strong>
           <small>${email}${tel ? ' · ' + tel : ''}</small>
@@ -2460,6 +2603,8 @@ window.abrirDetalheContabilidade = function(c) {
   document.getElementById('dc-endereco').value = c.endereco || '';
   document.getElementById('dc-cidade').value = c.cidade || '';
   document.getElementById('dc-cep').value = c.cep || '';
+  document.getElementById('dc-valor').value = c.valorPorProcesso || '';
+  document.getElementById('dc-nivel-acesso').value = c.nivelAcesso || 'operacional';
   document.getElementById('dc-cnpj-status').textContent = '';
   document.getElementById('dc-ativos').textContent = c.ativos;
   document.getElementById('dc-concluidos').textContent = c.concluidos;
@@ -2478,6 +2623,8 @@ window.salvarDetalheContabilidade = async function() {
   const endereco = document.getElementById('dc-endereco').value.trim();
   const cidade = document.getElementById('dc-cidade').value.trim();
   const cep = document.getElementById('dc-cep').value.trim();
+  const valorPorProcesso = parseFloat(document.getElementById('dc-valor').value) || 0;
+  const nivelAcesso = document.getElementById('dc-nivel-acesso').value;
   if (!nome) {
     alertEl.textContent = 'Informe o nome da contabilidade.';
     alertEl.classList.remove('hidden');
@@ -2491,7 +2638,9 @@ window.salvarDetalheContabilidade = async function() {
       cnpj,
       endereco,
       cidade,
-      cep
+      cep,
+      valorPorProcesso,
+      nivelAcesso
     });
     closeModal('modal-detalhe-conta');
     carregarContabilidades();
@@ -2613,6 +2762,8 @@ window.criarContabilidade = async function() {
   const endereco    = document.getElementById('nc-endereco').value.trim();
   const cidade      = document.getElementById('nc-cidade').value.trim();
   const cep         = document.getElementById('nc-cep').value.trim();
+  const valorPorProcesso = parseFloat(document.getElementById('nc-valor').value) || 0;
+  const nivelAcesso = document.getElementById('nc-nivel-acesso').value;
   const alertEl     = document.getElementById('nc-alert');
   alertEl.classList.add('hidden');
 
@@ -2670,6 +2821,8 @@ window.criarContabilidade = async function() {
       endereco,
       cidade,
       cep,
+      valorPorProcesso,
+      nivelAcesso,
       criadoEm: new Date().toISOString(),
       criadoPor: auth.currentUser?.uid || '',
       conviteEnviado: true
@@ -2694,6 +2847,8 @@ window.criarContabilidade = async function() {
     document.getElementById('nc-endereco').value     = '';
     document.getElementById('nc-cidade').value       = '';
     document.getElementById('nc-cep').value          = '';
+    document.getElementById('nc-valor').value        = '';
+    document.getElementById('nc-nivel-acesso').value = 'operacional';
     document.getElementById('nc-cnpj-status').textContent = '';
     closeModal('modal-nova-conta');
     carregarContabilidades();
@@ -2856,11 +3011,27 @@ async function salvarStatus() {
   const status = document.getElementById('status-val').value;
   const etapa  = document.getElementById('status-etapa').value;
   const obs    = document.getElementById('status-obs').value.trim();
+
+  const extra = {};
+  let historico = p?.historico || [];
+  if (status === 'concluido' && p?.status !== 'concluido') {
+    const agora = new Date().toISOString();
+    extra.concluidoEm = agora;
+    historico = [...historico, {
+      tipo: 'conclusao',
+      etapa: etapa || p?.etapa || '—',
+      obs: 'Processo marcado como concluído',
+      resp: window._user?.nome || window._user?.email || '—',
+      data: agora
+    }];
+    extra.historico = historico;
+  }
+
   if (p?.id) {
-    try { await updateDoc(doc(db, 'processos', p.id), { status, etapa, obs }); showSaveIndicator(true); }
+    try { await updateDoc(doc(db, 'processos', p.id), { status, etapa, obs, ...extra }); showSaveIndicator(true); }
     catch(e) { alert('Erro: ' + e.message); return; }
   }
-  window._processoAberto = { ...p, status, etapa, obs };
+  window._processoAberto = { ...p, status, etapa, obs, ...extra };
   document.getElementById('modal-atualizar-status').classList.remove('open');
   openProcesso(window._processoAberto);
   if (p?.id) {
@@ -3398,6 +3569,7 @@ window.nav               = function(page, btn) {
   if (page === 'contabilidades') carregarContabilidades();
   if (page === 'tarefas') carregarTarefas();
   if (page === 'relatorios') window.carregarRelatorios();
+  if (page === 'faturamento') window.carregarFaturamento();
   if (page === 'documentos') carregarDocumentos();
   if (page === 'dashboard') carregarDashboard();
 };
@@ -3815,7 +3987,7 @@ const pages = {
   dashboard:'Dashboard', processos:'Processos', tarefas:'Tarefas',
   documentos:'Documentos', chat:'Comunicação',
   contabilidades:'Contabilidades', fluxos:'Fluxos',
-  usuarios:'Usuários', relatorios:'Relatórios'
+  usuarios:'Usuários', relatorios:'Relatórios', faturamento:'Faturamento'
 };
 function nav(page, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -4124,6 +4296,7 @@ function renderHistorico() {
     const isRemoved = h.tipo === 'documento_removido';
     const isCriacao = h.tipo === 'criacao';
     const isReabertura = h.tipo === 'reabertura';
+    const isConclusao = h.tipo === 'conclusao';
 
     const icon = isDoc
       ? `<div style="width:28px;height:28px;border-radius:50%;background:#E8EDF8;color:#2A6099;display:flex;align-items:center;justify-content:center;font-size:13px">📄</div>`
@@ -4133,6 +4306,8 @@ function renderHistorico() {
       ? `<div style="width:28px;height:28px;border-radius:50%;background:#FBF3DC;color:#8A6A10;display:flex;align-items:center;justify-content:center;font-size:13px">🆕</div>`
       : isReabertura
       ? `<div style="width:28px;height:28px;border-radius:50%;background:#FDF0E3;color:#B8621B;display:flex;align-items:center;justify-content:center;font-size:13px">↺</div>`
+      : isConclusao
+      ? `<div style="width:28px;height:28px;border-radius:50%;background:#EAF3DE;color:#2E7D52;display:flex;align-items:center;justify-content:center;font-size:13px">🏁</div>`
       : `<div style="width:28px;height:28px;border-radius:50%;background:#EAF3DE;color:#2E7D52;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">✓</div>`;
 
     const titulo = isDoc
@@ -4143,6 +4318,8 @@ function renderHistorico() {
       ? `<span style="color:#8A6A10">Processo criado</span> · ${h.etapa}`
       : isReabertura
       ? `<span style="color:#B8621B">Etapa reaberta</span> · ${h.etapa}`
+      : isConclusao
+      ? `<span style="color:#2E7D52">Processo concluído</span>`
       : `${h.etapa} <span style="color:var(--text3);font-weight:400">→</span> ${h.proxEtapa}`;
 
     const obsHtml = h.obs && h.obs !== '—'
