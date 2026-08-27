@@ -50,9 +50,25 @@ async function consultarProtocoloSP(numeroProtocolo) {
   if (json.code !== 200) {
     throw new Error(`Infosimples ${json.code}: ${json.code_message}`);
   }
-  const dados = json.data?.[0]?.primeiro_protocolo_lista?.dados_protocolo;
+  const lista = json.data?.[0]?.primeiro_protocolo_lista;
+  const dados = lista?.dados_protocolo;
   if (!dados) throw new Error('Resposta da Infosimples sem dados_protocolo.');
-  return { status: dados.status, datahoraSolicitacao: dados.datahora_solicitacao };
+
+  // A mesma resposta já traz dados da empresa (de graça, é a mesma chamada paga
+  // pro status) — aproveita pra pré-preencher o processo, sem precisar de IA
+  // nem de documento nenhum, quando esses campos ainda estiverem vazios.
+  const estabelecimento = lista?.estabelecimento;
+  const atividades = lista?.atividades_economicas || [];
+  const cnaePrincipal = atividades.find(a => /principal/i.test(a.cnae || ''))?.cnae || atividades[0]?.cnae || null;
+
+  return {
+    status: dados.status,
+    datahoraSolicitacao: dados.datahora_solicitacao,
+    cnpj: estabelecimento?.cnpj || null,
+    naturezaJuridica: estabelecimento?.natureza_juridica || null,
+    endereco: lista?.endereco?.confirmado || lista?.endereco?.indicado || null,
+    cnae: cnaePrincipal,
+  };
 }
 
 export default async function handler(req, res) {
@@ -68,22 +84,32 @@ export default async function handler(req, res) {
   const resultados = [];
   for (const p of alvos) {
     try {
-      const { status, datahoraSolicitacao } = await consultarProtocoloSP(p.numeroProtocolo);
-      if (status && status !== p.statusRedesim) {
-        const agora = new Date().toISOString();
-        await db.collection('processos').doc(p.id).update({
-          statusRedesim: status,
-          statusRedesimAtualizadoEm: agora,
-          historicoRedesim: admin.firestore.FieldValue.arrayUnion({
-            data: agora,
-            statusAnterior: p.statusRedesim || null,
-            statusNovo: status,
-            datahoraSolicitacaoRedesim: datahoraSolicitacao || null,
-          }),
+      const r = await consultarProtocoloSP(p.numeroProtocolo);
+      const agora = new Date().toISOString();
+      const updates = {};
+
+      if (r.status && r.status !== p.statusRedesim) {
+        updates.statusRedesim = r.status;
+        updates.statusRedesimAtualizadoEm = agora;
+        updates.historicoRedesim = admin.firestore.FieldValue.arrayUnion({
+          data: agora,
+          statusAnterior: p.statusRedesim || null,
+          statusNovo: r.status,
+          datahoraSolicitacaoRedesim: r.datahoraSolicitacao || null,
         });
-        resultados.push({ id: p.id, status, atualizado: true });
+      }
+      // Só preenche o que ainda está vazio — não sobrescreve dado já corrigido
+      // manualmente ou extraído por IA a partir dos documentos.
+      if (r.cnpj && !p.cnpj) updates.cnpj = r.cnpj;
+      if (r.naturezaJuridica && !p.naturezaJuridica) updates.naturezaJuridica = r.naturezaJuridica;
+      if (r.endereco && !p.endereco) updates.endereco = r.endereco;
+      if (r.cnae && !p.cnae) updates.cnae = r.cnae;
+
+      if (Object.keys(updates).length > 0) {
+        await db.collection('processos').doc(p.id).update(updates);
+        resultados.push({ id: p.id, status: r.status, atualizado: true, campos: Object.keys(updates) });
       } else {
-        resultados.push({ id: p.id, status, atualizado: false });
+        resultados.push({ id: p.id, status: r.status, atualizado: false });
       }
     } catch (e) {
       console.error(`Erro ao consultar protocolo do processo ${p.id}:`, e.message);
