@@ -4,5 +4,10 @@
       "path": "/api/checar-redesim-sp",
       "schedule": "0 11 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/extrair-dados-contrato.js": {
+      "maxDuration": 60
+    }
+  }
 }

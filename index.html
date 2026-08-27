@@ -304,6 +304,9 @@ tbody tr:hover td{background:var(--bg3);}
 }
 
 </style>
+<!-- Geração de contrato preenchido (.docx) a partir de modelo com variáveis {{...}} -->
+<script src="https://cdn.jsdelivr.net/npm/pizzip@3.1.8/dist/pizzip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.69.3/build/docxtemplater.min.js"></script>
 </head>
 <body>
 
@@ -341,6 +344,7 @@ tbody tr:hover td{background:var(--bg3);}
     <button class="sb-item" onclick="nav('processos',this)"><span class="si-icon">◎</span> Processos <span class="si-count" id="sidebar-processos-count">—</span></button>
     <button class="sb-item" onclick="nav('tarefas',this)"><span class="si-icon">✓</span> Tarefas <span class="si-badge hidden" id="sidebar-tarefas-badge">0</span></button>
     <button class="sb-item" onclick="nav('documentos',this)"><span class="si-icon">📄</span> Documentos</button>
+    <button class="sb-item" onclick="nav('gerar-contrato',this)"><span class="si-icon">✨</span> Gerar Contrato</button>
     <button class="sb-item" onclick="nav('chat',this)"><span class="si-icon">💬</span> Comunicação <span class="si-badge hidden" id="sidebar-comunicacao-badge">0</span></button>
     <button class="sb-item hidden" id="nav-faturamento-gerencial" onclick="nav('faturamento',this)"><span class="si-icon">💰</span> Faturamento</button>
   </div>
@@ -348,6 +352,7 @@ tbody tr:hover td{background:var(--bg3);}
     <div class="sb-label">Administração</div>
     <button class="sb-item" onclick="nav('contabilidades',this)"><span class="si-icon">◉</span> Contabilidades</button>
     <button class="sb-item" onclick="nav('fluxos',this)"><span class="si-icon">⇌</span> Fluxos</button>
+    <button class="sb-item" onclick="nav('modelos-contrato',this)"><span class="si-icon">📝</span> Modelos de Contrato</button>
     <button class="sb-item" onclick="nav('usuarios',this)"><span class="si-icon">👤</span> Usuários</button>
     <button class="sb-item" onclick="nav('relatorios',this)"><span class="si-icon">↗</span> Relatórios</button>
     <button class="sb-item" onclick="nav('faturamento',this)"><span class="si-icon">💰</span> Faturamento</button>
@@ -600,6 +605,72 @@ tbody tr:hover td{background:var(--bg3);}
       </div>
     </div>
 
+    <!-- ═══ GERAR CONTRATO (AVULSO) ═══ -->
+    <div class="page" id="page-gerar-contrato">
+      <div class="page-header">
+        <div><h2>Gerar Contrato</h2><p>Gera um contrato preenchido a partir de documentos avulsos, sem precisar de um processo — nada aqui fica salvo</p></div>
+      </div>
+      <div class="card">
+        <div class="fg full" style="margin-bottom:10px">
+          <label>Modelo de contrato</label>
+          <select id="avulso-select-modelo" onchange="atualizarBotaoExtrairAvulso()">
+            <option value="">Selecione um modelo...</option>
+          </select>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:6px">Documentos do cliente</label>
+          <div id="avulso-docs-checklist" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+            <div style="font-size:12px;color:var(--text3)">Nenhum documento enviado ainda.</div>
+          </div>
+          <div class="doc-zone"
+            ondragover="event.preventDefault();this.style.borderColor='#B8952A'"
+            ondragleave="this.style.borderColor=''"
+            ondrop="event.preventDefault();this.style.borderColor='';uploadDocAvulso(event.dataTransfer.files)"
+            onclick="document.getElementById('avulso-file-input').click()">
+            <div style="font-size:22px">📎</div>
+            <p>Arraste ou clique para enviar documentos do cliente</p>
+            <p style="font-size:10px;margin-top:2px">PDF, JPG, PNG — usados só pra leitura da IA, depois apagados</p>
+          </div>
+          <input type="file" id="avulso-file-input" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png"
+            onchange="uploadDocAvulso(this.files)"/>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button class="btn btn-accent btn-sm" id="btn-extrair-avulso" onclick="extrairDadosContratoAvulso()" disabled>✨ Extrair dados com IA</button>
+          <button class="btn btn-ghost btn-sm" onclick="limparContratoAvulso()">Limpar</button>
+        </div>
+        <div id="avulso-status" style="font-size:12px;color:var(--text3);margin-bottom:10px"></div>
+        <div id="avulso-campos-wrap" class="hidden">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Revise os dados extraídos antes de gerar</div>
+          <div id="avulso-campos-lista" class="form-grid" style="margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button class="btn btn-accent btn-sm" onclick="gerarContratoAvulso()">📄 Gerar contrato (.docx)</button>
+          </div>
+          <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Preview</div>
+          <pre id="avulso-preview" style="white-space:pre-wrap;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;font-family:'DM Sans',sans-serif;font-size:12px;max-height:320px;overflow-y:auto;"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ MODELOS DE CONTRATO ═══ -->
+    <div class="page" id="page-modelos-contrato">
+      <div class="page-header">
+        <div><h2>Modelos de Contrato</h2><p>Modelos de contrato social (.docx) com variáveis — preenchidos automaticamente a partir dos documentos do cliente</p></div>
+        <button class="btn btn-accent" onclick="document.getElementById('modelo-file-input').click()">+ Novo modelo</button>
+        <input type="file" id="modelo-file-input" class="hidden" accept=".docx" onchange="uploadModeloContrato(this.files[0])" />
+      </div>
+      <div class="card" style="background:rgba(184,149,42,0.06);border-color:rgba(184,149,42,0.25);">
+        <div style="font-size:12px;color:var(--text3);line-height:1.6">
+          Suba um arquivo <strong>.docx</strong> com variáveis no formato <code>{{nome_socio}}</code>, <code>{{cpf}}</code> etc. — o sistema detecta as variáveis automaticamente. Depois, dentro de um processo, use a aba "Contrato" para extrair os dados dos documentos anexados via IA e gerar o contrato preenchido.
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">📝 Modelos cadastrados</div>
+        <div id="modelos-contrato-lista">
+          <div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Carregando modelos...</div>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══ CHAT ═══ -->
     <div class="page" id="page-chat">
       <div class="page-header">
@@ -808,6 +879,7 @@ tbody tr:hover td{background:var(--bg3);}
       <button class="tab-btn active" onclick="ptab('visao',this)">Visão geral</button>
       <button class="tab-btn" onclick="ptab('tarefas',this)">Tarefas</button>
       <button class="tab-btn" onclick="ptab('docs',this)">Documentos</button>
+      <button class="tab-btn" onclick="ptab('contrato',this)">Contrato</button>
       <button class="tab-btn" onclick="ptab('chat2',this)">Comunicação</button>
       <button class="tab-btn" onclick="ptab('historico',this)">Histórico</button>
     </div>
@@ -869,6 +941,33 @@ tbody tr:hover td{background:var(--bg3);}
       </div>
       <input type="file" id="modal-file-input" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx"
         onchange="uploadDocProcesso(this.files)"/>
+    </div>
+    <div id="ptab-contrato" class="hidden">
+      <div class="fg full" style="margin-bottom:10px">
+        <label>Modelo de contrato</label>
+        <select id="contrato-select-modelo" onchange="onModeloContratoSelecionado()">
+          <option value="">Selecione um modelo...</option>
+        </select>
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:6px">Documentos do cliente a usar na extração</label>
+        <div id="contrato-docs-checklist" style="display:flex;flex-direction:column;gap:4px;">
+          <div style="font-size:12px;color:var(--text3)">Selecione um modelo para ver os documentos anexados.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="btn btn-accent btn-sm" id="btn-extrair-contrato" onclick="extrairDadosContrato()" disabled>✨ Extrair dados com IA</button>
+      </div>
+      <div id="contrato-status" style="font-size:12px;color:var(--text3);margin-bottom:10px"></div>
+      <div id="contrato-campos-wrap" class="hidden">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Revise os dados extraídos antes de gerar</div>
+        <div id="contrato-campos-lista" class="form-grid" style="margin-bottom:12px"></div>
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <button class="btn btn-accent btn-sm" onclick="gerarContrato()">📄 Gerar contrato (.docx)</button>
+        </div>
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Preview</div>
+        <pre id="contrato-preview" style="white-space:pre-wrap;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;font-family:'DM Sans',sans-serif;font-size:12px;max-height:320px;overflow-y:auto;"></pre>
+      </div>
     </div>
     <div id="ptab-chat2" class="hidden">
       <div class="chat-wrap" id="processo-chat-wrap" style="max-height:220px">
@@ -3296,6 +3395,416 @@ window.excluirDocProcesso = async function(docId, storagePath) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
+// MODELOS DE CONTRATO — upload de .docx com variáveis {{...}}, extração via IA
+// a partir dos documentos do cliente e geração do contrato preenchido
+// ═══════════════════════════════════════════════════════════════════════════
+function decodeXmlEntities(str) {
+  return str
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n));
+}
+
+// Extrai o texto visível e as variáveis {{nome}} de um .docx (via PizZip, sem backend).
+// Aproximação client-side só para detecção/preview — a geração final usa docxtemplater,
+// que lida corretamente com tags quebradas entre "runs" do Word.
+function extrairVariaveisDocx(arrayBuffer) {
+  const zip = new PizZip(arrayBuffer);
+  const xml = zip.file('word/document.xml')?.asText() || '';
+  const textoPlano = decodeXmlEntities(
+    (xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).map(m => m.replace(/<[^>]+>/g, '')).join('')
+  );
+  const variaveisSet = new Set();
+  const regex = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+  let match;
+  while ((match = regex.exec(textoPlano))) variaveisSet.add(match[1]);
+  return { variaveis: Array.from(variaveisSet), textoPlano };
+}
+
+window.carregarModelosContrato = async function() {
+  const lista = document.getElementById('modelos-contrato-lista');
+  if (!lista) return;
+  lista.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Carregando modelos...</div>';
+  try {
+    const snap = await getDocs(query(collection(db, 'modelosContrato'), orderBy('criadoEm', 'desc')));
+    window._modelosContrato = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (window._modelosContrato.length === 0) {
+      lista.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Nenhum modelo cadastrado ainda.</div>';
+      return;
+    }
+    lista.innerHTML = window._modelosContrato.map(m => `
+      <div class="doc-list-item">
+        <div class="doc-name">📝 ${m.nome}</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--text3)">${(m.variaveis||[]).length} variável(is): ${(m.variaveis||[]).join(', ') || '—'}</span>
+          <a href="${m.url}" target="_blank" class="btn btn-ghost btn-sm" style="text-decoration:none">⬇ Baixar</a>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="excluirModeloContrato('${m.id}','${m.storagePath||''}')">✕</button>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    lista.innerHTML = `<div style="padding:10px;color:var(--red);font-size:12px">Erro: ${e.message}</div>`;
+  }
+};
+
+window.uploadModeloContrato = async function(file) {
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.docx')) { alert('Envie um arquivo .docx'); return; }
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const { variaveis, textoPlano } = extrairVariaveisDocx(arrayBuffer);
+    if (variaveis.length === 0 && !confirm('Nenhuma variável {{...}} encontrada nesse modelo. Enviar mesmo assim?')) {
+      document.getElementById('modelo-file-input').value = '';
+      return;
+    }
+    const nome = prompt('Nome do modelo:', file.name.replace(/\.docx$/i, '')) || file.name;
+    const storagePath = `modelos/${Date.now()}_${file.name}`;
+    const storageRef = ref(storage, storagePath);
+    await uploadBytesResumable(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    await addDoc(collection(db, 'modelosContrato'), {
+      nome, url, storagePath, variaveis,
+      textoPlano: textoPlano.slice(0, 20000),
+      criadoEm: new Date().toISOString(),
+      criadoPor: auth.currentUser?.uid || ''
+    });
+    document.getElementById('modelo-file-input').value = '';
+    carregarModelosContrato();
+    showSaveIndicator(true);
+  } catch(e) {
+    alert('Erro ao enviar modelo: ' + e.message);
+  }
+};
+
+window.excluirModeloContrato = async function(id, storagePath) {
+  if (!confirm('Remover este modelo de contrato?')) return;
+  try {
+    await deleteDoc(doc(db, 'modelosContrato', id));
+    if (storagePath) { try { await deleteObject(ref(storage, storagePath)); } catch(e) { console.warn('Storage delete:', e.message); } }
+    carregarModelosContrato();
+  } catch(e) { alert('Erro ao remover: ' + e.message); }
+};
+
+window.renderContratoTab = async function() {
+  const p = window._processoAberto;
+  const statusEl = document.getElementById('contrato-status');
+  const wrap = document.getElementById('contrato-campos-wrap');
+  if (wrap) wrap.classList.add('hidden');
+  if (statusEl) statusEl.textContent = '';
+  if (!p?.id) { if (statusEl) statusEl.textContent = 'Salve o processo primeiro.'; return; }
+
+  if (!window._modelosContrato) {
+    try {
+      const snap = await getDocs(collection(db, 'modelosContrato'));
+      window._modelosContrato = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch(e) { window._modelosContrato = []; }
+  }
+  const sel = document.getElementById('contrato-select-modelo');
+  sel.innerHTML = '<option value="">Selecione um modelo...</option>' +
+    window._modelosContrato.map(m => `<option value="${m.id}">${m.nome}</option>`).join('');
+
+  try {
+    const snap = await getDocs(collection(db, 'processos', p.id, 'documentos'));
+    window._docsProcessoContrato = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch(e) {
+    window._docsProcessoContrato = [];
+  }
+  renderContratoDocsChecklist();
+};
+
+function renderContratoDocsChecklist() {
+  const container = document.getElementById('contrato-docs-checklist');
+  const docs = window._docsProcessoContrato || [];
+  if (docs.length === 0) {
+    container.innerHTML = '<div style="font-size:12px;color:var(--text3)">Nenhum documento anexado neste processo ainda — vá na aba Documentos primeiro.</div>';
+    document.getElementById('btn-extrair-contrato').disabled = true;
+    return;
+  }
+  container.innerHTML = docs.map(d => `
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0;cursor:pointer">
+      <input type="checkbox" class="contrato-doc-check" value="${d.id}" checked onchange="atualizarBotaoExtrair()"/>
+      ${d.nome}
+    </label>`).join('');
+  atualizarBotaoExtrair();
+}
+
+window.atualizarBotaoExtrair = function() {
+  const algumaSelecionada = document.querySelectorAll('.contrato-doc-check:checked').length > 0;
+  const modeloSelecionado = document.getElementById('contrato-select-modelo').value;
+  document.getElementById('btn-extrair-contrato').disabled = !(algumaSelecionada && modeloSelecionado);
+};
+
+window.onModeloContratoSelecionado = function() {
+  atualizarBotaoExtrair();
+};
+
+window.extrairDadosContrato = async function() {
+  const p = window._processoAberto;
+  const modeloId = document.getElementById('contrato-select-modelo').value;
+  const documentoIds = Array.from(document.querySelectorAll('.contrato-doc-check:checked')).map(c => c.value);
+  const statusEl = document.getElementById('contrato-status');
+  const btn = document.getElementById('btn-extrair-contrato');
+  if (!modeloId || documentoIds.length === 0 || !p?.id) return;
+
+  btn.disabled = true;
+  statusEl.textContent = '⏳ Lendo documentos e extraindo dados com IA — pode levar até 1 minuto...';
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const resp = await fetch('/api/extrair-dados-contrato', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+      body: JSON.stringify({ processoId: p.id, modeloId, documentoIds })
+    });
+    const json = await resp.json();
+    if (!resp.ok) throw new Error(json.error || 'Falha na extração');
+
+    const modelo = (window._modelosContrato || []).find(m => m.id === modeloId);
+    window._contratoModeloSelecionado = modelo;
+
+    const camposLista = document.getElementById('contrato-campos-lista');
+    camposLista.innerHTML = (modelo.variaveis || []).map(v => `
+      <div class="fg">
+        <label>${v}</label>
+        <input type="text" class="contrato-campo-input" data-var="${v}" value="${(json.valores[v] ?? '').toString().replace(/"/g,'&quot;')}" oninput="atualizarPreviewContrato()"/>
+      </div>`).join('');
+
+    document.getElementById('contrato-campos-wrap').classList.remove('hidden');
+    statusEl.textContent = '✓ Dados extraídos — revise os campos abaixo antes de gerar o contrato.';
+    atualizarPreviewContrato();
+  } catch(e) {
+    statusEl.textContent = '❌ Erro: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+window.atualizarPreviewContrato = function() {
+  const modelo = window._contratoModeloSelecionado;
+  const preview = document.getElementById('contrato-preview');
+  if (!modelo || !preview) return;
+  let texto = modelo.textoPlano || '';
+  document.querySelectorAll('.contrato-campo-input').forEach(input => {
+    const v = input.dataset.var;
+    const val = input.value || `{{${v}}}`;
+    texto = texto.split(`{{${v}}}`).join(val);
+  });
+  preview.textContent = texto;
+};
+
+// Preenche um modelo .docx com os dados informados e devolve o Blob final.
+// Compartilhado entre a geração dentro de um processo e a geração avulsa.
+async function gerarBlobContrato(modelo, dados) {
+  const resp = await fetch(modelo.url);
+  const arrayBuffer = await resp.arrayBuffer();
+  const zip = new PizZip(arrayBuffer);
+  const docx = new window.docxtemplater(zip, { delimiters: { start: '{{', end: '}}' }, paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
+  docx.render(dados);
+  return docx.getZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+function baixarBlob(blob, nomeArquivo) {
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl; a.download = nomeArquivo;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(blobUrl);
+}
+
+function lerCamposEditaveis(seletor) {
+  const dados = {};
+  document.querySelectorAll(seletor).forEach(input => { dados[input.dataset.var] = input.value || ''; });
+  return dados;
+}
+
+window.gerarContrato = async function() {
+  const modelo = window._contratoModeloSelecionado;
+  const p = window._processoAberto;
+  if (!modelo) return;
+  try {
+    const dados = lerCamposEditaveis('.contrato-campo-input');
+    const blob = await gerarBlobContrato(modelo, dados);
+    baixarBlob(blob, `Contrato - ${p?.empresa || 'processo'}.docx`);
+
+    if (p?.id) {
+      const historico = p.historico || [];
+      historico.push({
+        tipo: 'contrato_gerado',
+        etapa: p.etapa || '—',
+        obs: `Contrato gerado a partir do modelo "${modelo.nome}"`,
+        resp: window._user?.nome || window._user?.email || '—',
+        data: new Date().toISOString()
+      });
+      await updateDoc(doc(db, 'processos', p.id), { historico });
+      window._processoAberto = { ...p, historico };
+      showSaveIndicator(true);
+    }
+  } catch(e) {
+    alert('Erro ao gerar contrato: ' + e.message);
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GERAR CONTRATO AVULSO — sem processo vinculado. Documentos sobem pro Storage
+// só como fonte de leitura pra IA e são apagados assim que a extração termina;
+// nada fica salvo no Firestore.
+// ═══════════════════════════════════════════════════════════════════════════
+window._avulsoDocs = [];
+
+window.carregarModelosContratoAvulso = async function() {
+  if (!window._modelosContrato) {
+    try {
+      const snap = await getDocs(collection(db, 'modelosContrato'));
+      window._modelosContrato = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch(e) { window._modelosContrato = []; }
+  }
+  const sel = document.getElementById('avulso-select-modelo');
+  if (sel) {
+    sel.innerHTML = '<option value="">Selecione um modelo...</option>' +
+      window._modelosContrato.map(m => `<option value="${m.id}">${m.nome}</option>`).join('');
+  }
+};
+
+window.uploadDocAvulso = async function(files) {
+  if (!files || files.length === 0) return;
+  const statusEl = document.getElementById('avulso-status');
+  for (const file of Array.from(files)) {
+    if (file.size > 20 * 1024 * 1024) { alert(`${file.name} é maior que 20MB.`); continue; }
+    try {
+      const storagePath = `avulsos/${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytesResumable(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      window._avulsoDocs.push({ nome: file.name, url, tipo: file.type, storagePath });
+    } catch(e) {
+      if (statusEl) statusEl.textContent = `❌ Erro ao enviar ${file.name}: ${e.message}`;
+    }
+  }
+  document.getElementById('avulso-file-input').value = '';
+  renderAvulsoDocsChecklist();
+};
+
+function renderAvulsoDocsChecklist() {
+  const container = document.getElementById('avulso-docs-checklist');
+  const docs = window._avulsoDocs || [];
+  if (docs.length === 0) {
+    container.innerHTML = '<div style="font-size:12px;color:var(--text3)">Nenhum documento enviado ainda.</div>';
+  } else {
+    container.innerHTML = docs.map((d, idx) => `
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0;cursor:pointer">
+        <input type="checkbox" class="avulso-doc-check" value="${idx}" checked onchange="atualizarBotaoExtrairAvulso()"/>
+        ${d.nome}
+        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--red);margin-left:auto" onclick="event.preventDefault();removerDocAvulso(${idx})">✕</button>
+      </label>`).join('');
+  }
+  atualizarBotaoExtrairAvulso();
+}
+
+window.removerDocAvulso = async function(idx) {
+  const doc2 = window._avulsoDocs[idx];
+  if (!doc2) return;
+  try { await deleteObject(ref(storage, doc2.storagePath)); } catch(e) { console.warn('Storage delete:', e.message); }
+  window._avulsoDocs.splice(idx, 1);
+  renderAvulsoDocsChecklist();
+};
+
+window.atualizarBotaoExtrairAvulso = function() {
+  const algumaSelecionada = document.querySelectorAll('.avulso-doc-check:checked').length > 0;
+  const modeloSelecionado = document.getElementById('avulso-select-modelo')?.value;
+  const btn = document.getElementById('btn-extrair-avulso');
+  if (btn) btn.disabled = !(algumaSelecionada && modeloSelecionado);
+};
+
+// Apaga do Storage os documentos temporários (todos, ou só os já usados numa extração).
+async function limparDocsAvulsoDoStorage(docs) {
+  await Promise.all(docs.map(d => deleteObject(ref(storage, d.storagePath)).catch(e => console.warn('Storage delete:', e.message))));
+}
+
+window.limparContratoAvulso = async function() {
+  if (window._avulsoDocs?.length) await limparDocsAvulsoDoStorage(window._avulsoDocs);
+  window._avulsoDocs = [];
+  window._avulsoModeloSelecionado = null;
+  renderAvulsoDocsChecklist();
+  document.getElementById('avulso-select-modelo').value = '';
+  document.getElementById('avulso-campos-wrap').classList.add('hidden');
+  document.getElementById('avulso-status').textContent = '';
+  atualizarBotaoExtrairAvulso();
+};
+
+window.extrairDadosContratoAvulso = async function() {
+  const modeloId = document.getElementById('avulso-select-modelo').value;
+  const idxsSelecionados = Array.from(document.querySelectorAll('.avulso-doc-check:checked')).map(c => Number(c.value));
+  const documentosSelecionados = idxsSelecionados.map(i => window._avulsoDocs[i]).filter(Boolean);
+  const statusEl = document.getElementById('avulso-status');
+  const btn = document.getElementById('btn-extrair-avulso');
+  if (!modeloId || documentosSelecionados.length === 0) return;
+
+  btn.disabled = true;
+  statusEl.textContent = '⏳ Lendo documentos e extraindo dados com IA — pode levar até 1 minuto...';
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const resp = await fetch('/api/extrair-dados-contrato', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+      body: JSON.stringify({
+        modeloId,
+        documentos: documentosSelecionados.map(d => ({ url: d.url, tipo: d.tipo, nome: d.nome }))
+      })
+    });
+    const json = await resp.json();
+    if (!resp.ok) throw new Error(json.error || 'Falha na extração');
+
+    const modelo = (window._modelosContrato || []).find(m => m.id === modeloId);
+    window._avulsoModeloSelecionado = modelo;
+
+    const camposLista = document.getElementById('avulso-campos-lista');
+    camposLista.innerHTML = (modelo.variaveis || []).map(v => `
+      <div class="fg">
+        <label>${v}</label>
+        <input type="text" class="avulso-campo-input" data-var="${v}" value="${(json.valores[v] ?? '').toString().replace(/"/g,'&quot;')}" oninput="atualizarPreviewContratoAvulso()"/>
+      </div>`).join('');
+
+    document.getElementById('avulso-campos-wrap').classList.remove('hidden');
+    atualizarPreviewContratoAvulso();
+
+    // Documentos já foram lidos pela IA — apaga do Storage, é avulso mesmo.
+    await limparDocsAvulsoDoStorage(documentosSelecionados);
+    window._avulsoDocs = window._avulsoDocs.filter(d => !documentosSelecionados.includes(d));
+    renderAvulsoDocsChecklist();
+
+    statusEl.textContent = '✓ Dados extraídos — revise os campos abaixo antes de gerar. Documentos temporários já foram removidos do Storage.';
+  } catch(e) {
+    statusEl.textContent = '❌ Erro: ' + e.message;
+  } finally {
+    atualizarBotaoExtrairAvulso();
+  }
+};
+
+window.atualizarPreviewContratoAvulso = function() {
+  const modelo = window._avulsoModeloSelecionado;
+  const preview = document.getElementById('avulso-preview');
+  if (!modelo || !preview) return;
+  let texto = modelo.textoPlano || '';
+  document.querySelectorAll('.avulso-campo-input').forEach(input => {
+    const v = input.dataset.var;
+    const val = input.value || `{{${v}}}`;
+    texto = texto.split(`{{${v}}}`).join(val);
+  });
+  preview.textContent = texto;
+};
+
+window.gerarContratoAvulso = async function() {
+  const modelo = window._avulsoModeloSelecionado;
+  if (!modelo) return;
+  try {
+    const dados = lerCamposEditaveis('.avulso-campo-input');
+    const blob = await gerarBlobContrato(modelo, dados);
+    baixarBlob(blob, `Contrato - ${dados.nome_socio || dados.empresa || 'avulso'}.docx`);
+  } catch(e) {
+    alert('Erro ao gerar contrato: ' + e.message);
+  }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════
 // CHECKLIST NO MODAL DO PROCESSO — dinâmico com auto-avanço
 // ═══════════════════════════════════════════════════════════════════════════
 function renderChecklistModal() {
@@ -3661,6 +4170,8 @@ window.nav               = function(page, btn) {
   if (page === 'faturamento') window.carregarFaturamento();
   if (page === 'documentos') carregarDocumentos();
   if (page === 'dashboard') carregarDashboard();
+  if (page === 'modelos-contrato') carregarModelosContrato();
+  if (page === 'gerar-contrato') carregarModelosContratoAvulso();
 };
 window.switchRole        = switchRole;
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4075,7 +4586,9 @@ async function carregarDashboard() {
 const pages = {
   dashboard:'Dashboard', processos:'Processos', tarefas:'Tarefas',
   documentos:'Documentos', chat:'Comunicação',
+  'gerar-contrato':'Gerar Contrato',
   contabilidades:'Contabilidades', fluxos:'Fluxos',
+  'modelos-contrato':'Modelos de Contrato',
   usuarios:'Usuários', relatorios:'Relatórios', faturamento:'Faturamento'
 };
 window.toggleSidebar = function() {
@@ -4377,7 +4890,7 @@ function filterProcessos(f, btn) {
 
 // PROCESSO TABS
 function ptab(t, btn) {
-  ['visao','tarefas','docs','chat2','historico'].forEach(id => {
+  ['visao','tarefas','docs','contrato','chat2','historico'].forEach(id => {
     const el = document.getElementById('ptab-'+id);
     if (el) el.classList.add('hidden');
   });
@@ -4389,6 +4902,7 @@ function ptab(t, btn) {
   if (t === 'historico') renderHistorico();
   if (t === 'docs') carregarDocsProcesso();
   if (t === 'tarefas') renderChecklistModal();
+  if (t === 'contrato') renderContratoTab();
   if (t === 'chat2') { const p = window._processoAberto; if (p?.id) carregarChatProcesso(p.id); }
 }
 
