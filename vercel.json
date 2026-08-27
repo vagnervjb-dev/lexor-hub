@@ -8,6 +8,9 @@
   "functions": {
     "api/extrair-dados-contrato.js": {
       "maxDuration": 60
+    },
+    "api/extrair-dados-processo.js": {
+      "maxDuration": 60
     }
   }
 }

@@ -941,6 +941,23 @@ tbody tr:hover td{background:var(--bg3);}
       </div>
       <input type="file" id="modal-file-input" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx"
         onchange="uploadDocProcesso(this.files)"/>
+
+      <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Preencher processo com IA</div>
+        <button class="btn btn-accent btn-sm" id="btn-extrair-processo" onclick="extrairDadosProcesso()">✨ Extrair dados dos documentos</button>
+      </div>
+      <div id="extrair-processo-status" style="font-size:12px;color:var(--text3);margin-bottom:8px"></div>
+      <div id="extrair-processo-wrap" class="hidden">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Revise os dados antes de salvar no processo:</div>
+        <div id="extrair-processo-campos" class="form-grid" style="margin-bottom:12px"></div>
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Quadro societário</div>
+        <div id="extrair-processo-socios" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px"></div>
+        <button class="btn btn-ghost btn-sm" style="margin-bottom:12px" onclick="adicionarSocioExtraido()">+ Sócio</button>
+        <div>
+          <button class="btn btn-accent btn-sm" onclick="salvarDadosExtraidosProcesso()">Salvar no processo</button>
+        </div>
+      </div>
     </div>
     <div id="ptab-contrato" class="hidden">
       <div class="fg full" style="margin-bottom:10px">
@@ -3391,6 +3408,132 @@ window.excluirDocProcesso = async function(docId, storagePath) {
     carregarDocsProcesso();
     showSaveIndicator(true);
   } catch(e) { alert('Erro ao remover: ' + e.message); }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXTRAIR DADOS DO PROCESSO — lê os documentos já anexados (RG, CPF, comprovante
+// de endereço etc.) e pré-preenche empresa + quadro societário via IA, em vez de
+// digitar tudo à mão na etapa de Coleta de dados.
+// ═══════════════════════════════════════════════════════════════════════════
+window.extrairDadosProcesso = async function() {
+  const p = window._processoAberto;
+  const statusEl = document.getElementById('extrair-processo-status');
+  const btn = document.getElementById('btn-extrair-processo');
+  if (!p?.id) { if (statusEl) statusEl.textContent = 'Salve o processo primeiro.'; return; }
+
+  let documentoIds;
+  try {
+    const snap = await getDocs(collection(db, 'processos', p.id, 'documentos'));
+    documentoIds = snap.docs.map(d => d.id);
+  } catch(e) {
+    statusEl.textContent = '❌ Erro ao carregar documentos: ' + e.message;
+    return;
+  }
+  if (documentoIds.length === 0) {
+    statusEl.textContent = 'Nenhum documento anexado ainda — envie os documentos do cliente acima primeiro.';
+    return;
+  }
+
+  btn.disabled = true;
+  statusEl.textContent = '⏳ Lendo documentos e extraindo dados com IA — pode levar até 1 minuto...';
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const resp = await fetch('/api/extrair-dados-processo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+      body: JSON.stringify({ processoId: p.id, documentoIds })
+    });
+    const json = await resp.json();
+    if (!resp.ok) throw new Error(json.error || 'Falha na extração');
+
+    const v = json.valores;
+    const camposLista = document.getElementById('extrair-processo-campos');
+    const campos = [
+      ['cnpj', 'CNPJ'], ['naturezaJuridica', 'Natureza jurídica'], ['regimeTributario', 'Regime tributário'],
+      ['capitalSocial', 'Capital social'], ['cnae', 'CNAE principal'], ['endereco', 'Endereço'],
+      ['cidade', 'Cidade'], ['cep', 'CEP'], ['whatsapp', 'WhatsApp'], ['emailCliente', 'E-mail do cliente']
+    ];
+    camposLista.innerHTML = campos.map(([campo, label]) => `
+      <div class="fg">
+        <label>${label}</label>
+        <input type="text" class="extrair-processo-campo" data-campo="${campo}" value="${(v[campo] ?? '').toString().replace(/"/g,'&quot;')}"/>
+      </div>`).join('');
+
+    window._sociosExtraidos = (v.socios || []).map(s => ({
+      nome: s.nome || '', cpf: s.cpf || '', administrador: !!s.administrador, participacao: s.participacao || ''
+    }));
+    renderSociosExtraidos();
+
+    document.getElementById('extrair-processo-wrap').classList.remove('hidden');
+    statusEl.textContent = '✓ Dados extraídos — revise antes de salvar no processo.';
+  } catch(e) {
+    statusEl.textContent = '❌ Erro: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+function renderSociosExtraidos() {
+  const container = document.getElementById('extrair-processo-socios');
+  const socios = window._sociosExtraidos || [];
+  if (socios.length === 0) {
+    container.innerHTML = '<div style="font-size:12px;color:var(--text3)">Nenhum sócio identificado nos documentos.</div>';
+    return;
+  }
+  container.innerHTML = socios.map((s, idx) => `
+    <div style="display:grid;grid-template-columns:2fr 1.2fr 0.8fr auto auto;gap:6px;align-items:center;background:var(--bg3);border-radius:5px;padding:8px 10px;">
+      <input type="text" placeholder="Nome" value="${(s.nome||'').replace(/"/g,'&quot;')}" oninput="window._sociosExtraidos[${idx}].nome=this.value"/>
+      <input type="text" placeholder="CPF" value="${(s.cpf||'').replace(/"/g,'&quot;')}" oninput="window._sociosExtraidos[${idx}].cpf=this.value"/>
+      <input type="text" placeholder="% part." value="${(s.participacao||'').replace(/"/g,'&quot;')}" oninput="window._sociosExtraidos[${idx}].participacao=this.value"/>
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text3);white-space:nowrap;">
+        <input type="checkbox" ${s.administrador?'checked':''} onchange="window._sociosExtraidos[${idx}].administrador=this.checked"/> Adm.
+      </label>
+      <button type="button" class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="removerSocioExtraido(${idx})">✕</button>
+    </div>`).join('');
+}
+
+window.adicionarSocioExtraido = function() {
+  window._sociosExtraidos = window._sociosExtraidos || [];
+  window._sociosExtraidos.push({ nome: '', cpf: '', administrador: false, participacao: '' });
+  renderSociosExtraidos();
+};
+
+window.removerSocioExtraido = function(idx) {
+  window._sociosExtraidos.splice(idx, 1);
+  renderSociosExtraidos();
+};
+
+window.salvarDadosExtraidosProcesso = async function() {
+  const p = window._processoAberto;
+  if (!p?.id) return;
+  const campos = {};
+  document.querySelectorAll('.extrair-processo-campo').forEach(input => {
+    if (input.value) campos[input.dataset.campo] = input.value;
+  });
+  const socios = (window._sociosExtraidos || []).filter(s => s.nome).map(s => ({
+    nome: s.nome, cpf: s.cpf || '', administrador: !!s.administrador, participacao: s.participacao || ''
+  }));
+  if (socios.length > 0) campos.socios = socios;
+
+  try {
+    const historico = p.historico || [];
+    historico.push({
+      tipo: 'dados_extraidos',
+      etapa: p.etapa || '—',
+      obs: 'Dados da empresa e quadro societário preenchidos via extração por IA',
+      resp: window._user?.nome || window._user?.email || '—',
+      data: new Date().toISOString()
+    });
+    await updateDoc(doc(db, 'processos', p.id), { ...campos, historico });
+    window._processoAberto = { ...p, ...campos, historico };
+    window.openProcesso(window._processoAberto);
+    ptab('docs', document.querySelector('#modal-processo .tab-btn:nth-child(3)'));
+    document.getElementById('extrair-processo-status').textContent = '✓ Dados salvos no processo.';
+    showSaveIndicator(true);
+  } catch(e) {
+    alert('Erro ao salvar: ' + e.message);
+  }
 };
 
 
