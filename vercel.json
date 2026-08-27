@@ -11,6 +11,9 @@
     },
     "api/extrair-dados-processo.js": {
       "maxDuration": 60
+    },
+    "api/verificar-debitos.js": {
+      "maxDuration": 60
     }
   }
 }

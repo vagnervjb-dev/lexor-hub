@@ -3536,6 +3536,38 @@ window.salvarDadosExtraidosProcesso = async function() {
   }
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// VERIFICAR DÉBITOS — etapa de Encerramento. Consulta paga na Infosimples
+// (PGFN, Simples Nacional, Situação Fiscal), por isso é sempre manual, nunca
+// automática — dispara uma vez por processo quando o CNPJ já está preenchido.
+// ═══════════════════════════════════════════════════════════════════════════
+window.verificarDebitos = async function() {
+  const p = window._processoAberto;
+  if (!p?.id || !p?.cnpj) { alert('O processo precisa ter o CNPJ preenchido (aba Documentos → Extrair dados dos documentos, ou digite manualmente).'); return; }
+
+  const btn = document.getElementById('btn-verificar-debitos');
+  const statusEl = document.getElementById('debitos-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = '⏳ Consultando PGFN, Simples Nacional e Situação Fiscal — pode levar até 1 minuto...';
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const resp = await fetch('/api/verificar-debitos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+      body: JSON.stringify({ processoId: p.id })
+    });
+    const json = await resp.json();
+    if (!resp.ok) throw new Error(json.error || 'Falha ao verificar débitos');
+
+    window._processoAberto = { ...p, debitosVerificados: json.resultado };
+    window.openProcesso(window._processoAberto);
+    showSaveIndicator(true);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '❌ Erro: ' + e.message;
+    if (btn) btn.disabled = false;
+  }
+};
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MODELOS DE CONTRATO — upload de .docx com variáveis {{...}}, extração via IA
@@ -4887,6 +4919,21 @@ function openProcesso(p) {
             <span style="color:var(--text3)">${s.cpf || ''}${s.participacao ? ' · ' + s.participacao + '%' : ''}</span>
           </div>`).join('')}
         </div>
+      </div>`;
+    }
+
+    if (fluxoKey === 'encerramento' && p.cnpj) {
+      const dv = p.debitosVerificados;
+      blocos += `<div style="margin-top:14px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Débitos e situação fiscal</div>
+        <button class="btn btn-ghost btn-sm" id="btn-verificar-debitos" onclick="verificarDebitos()">🔍 Verificar débitos (Infosimples)</button>
+        ${dv ? `<div style="margin-top:8px;font-size:12.5px;display:flex;flex-direction:column;gap:5px;">
+          ${dv.pgfn ? `<div>PGFN (Federal): <span class="badge ${(dv.pgfn.debitosPgfn||dv.pgfn.debitosRfb) ? 'b-red' : 'b-green'}">${(dv.pgfn.debitosPgfn||dv.pgfn.debitosRfb) ? 'Débitos encontrados' : 'Sem débitos'}</span>${dv.pgfn.situacao ? ' — '+dv.pgfn.situacao : ''}</div>` : dv.erroPgfn ? `<div style="color:var(--red)">PGFN: ${dv.erroPgfn}</div>` : ''}
+          ${dv.simplesNacional ? `<div><span style="color:var(--text3)">Simples Nacional:</span> ${dv.simplesNacional.situacao||'—'}</div>` : dv.erroSimplesNacional ? `<div style="color:var(--red)">Simples Nacional: ${dv.erroSimplesNacional}</div>` : ''}
+          ${dv.situacaoFiscal ? `<div><span style="color:var(--text3)">Situação Fiscal:</span> ${dv.situacaoFiscal.pendenciasReceitaFederal.length} pendência(s) RFB, ${dv.situacaoFiscal.pendenciasProcuradoria.length} na Procuradoria</div>` : dv.erroSituacaoFiscal ? `<div style="color:var(--red)">Situação Fiscal: ${dv.erroSituacaoFiscal}</div>` : ''}
+          <div style="font-size:10.5px;color:var(--text3)">Verificado em ${new Date(dv.verificadoEm).toLocaleString('pt-BR')}</div>
+        </div>` : ''}
+        <div id="debitos-status" style="font-size:11px;color:var(--text3);margin-top:6px"></div>
       </div>`;
     }
 
