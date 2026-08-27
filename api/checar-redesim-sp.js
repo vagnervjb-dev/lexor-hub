@@ -1,0 +1,95 @@
+// Cron diário (ver vercel.json) — consulta o status do protocolo REDESIM na
+// JUCESP via Infosimples para todo processo com uf="SP" e numeroProtocolo
+// preenchido, e grava o resultado em statusRedesim/historicoRedesim.
+//
+// Cobertura: só SP. A Infosimples não tem produto equivalente para outros
+// estados (verificado em 2026-08) — processos de outras UFs continuam usando
+// o botão "Consultar no REDESIM" manual já existente no painel do processo.
+import { encrypt } from 'aes-bridge';
+import admin from 'firebase-admin';
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+    }),
+  });
+}
+const db = admin.firestore();
+
+const INFOSIMPLES_URL = 'https://api.infosimples.com/api/v2/consultas/junta-comercial/sp/redesim/acp';
+
+function toBase64Url(b64) {
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function consultarProtocoloSP(numeroProtocolo) {
+  const key = process.env.INFOSIMPLES_ENCRYPTION_KEY;
+  const [pkcs12_cert, pkcs12_pass] = await Promise.all([
+    encrypt(process.env.INFOSIMPLES_CERT_BASE64, key).then(toBase64Url),
+    encrypt(process.env.INFOSIMPLES_CERT_SENHA, key).then(toBase64Url),
+  ]);
+
+  const body = new URLSearchParams({
+    token: process.env.INFOSIMPLES_TOKEN,
+    protocolo: numeroProtocolo,
+    pkcs12_cert,
+    pkcs12_pass,
+    timeout: '600',
+  });
+
+  const resp = await fetch(INFOSIMPLES_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const json = await resp.json();
+
+  if (json.code !== 200) {
+    throw new Error(`Infosimples ${json.code}: ${json.code_message}`);
+  }
+  const dados = json.data?.[0]?.primeiro_protocolo_lista?.dados_protocolo;
+  if (!dados) throw new Error('Resposta da Infosimples sem dados_protocolo.');
+  return { status: dados.status, datahoraSolicitacao: dados.datahora_solicitacao };
+}
+
+export default async function handler(req, res) {
+  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const snap = await db.collection('processos').where('uf', '==', 'SP').get();
+  const alvos = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(p => p.numeroProtocolo && p.status !== 'concluido');
+
+  const resultados = [];
+  for (const p of alvos) {
+    try {
+      const { status, datahoraSolicitacao } = await consultarProtocoloSP(p.numeroProtocolo);
+      if (status && status !== p.statusRedesim) {
+        const agora = new Date().toISOString();
+        await db.collection('processos').doc(p.id).update({
+          statusRedesim: status,
+          statusRedesimAtualizadoEm: agora,
+          historicoRedesim: admin.firestore.FieldValue.arrayUnion({
+            data: agora,
+            statusAnterior: p.statusRedesim || null,
+            statusNovo: status,
+            datahoraSolicitacaoRedesim: datahoraSolicitacao || null,
+          }),
+        });
+        resultados.push({ id: p.id, status, atualizado: true });
+      } else {
+        resultados.push({ id: p.id, status, atualizado: false });
+      }
+    } catch (e) {
+      console.error(`Erro ao consultar protocolo do processo ${p.id}:`, e.message);
+      resultados.push({ id: p.id, erro: e.message });
+    }
+  }
+
+  return res.status(200).json({ verificados: alvos.length, resultados });
+}

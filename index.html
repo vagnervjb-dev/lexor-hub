@@ -962,6 +962,8 @@ tbody tr:hover td{background:var(--bg3);}
           <option>Processo concluído</option>
         </select>
       </div>
+      <div class="fg"><label>UF (protocolo REDESIM)</label><input id="status-uf" placeholder="SP" maxlength="2" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"/></div>
+      <div class="fg"><label>Número de protocolo REDESIM</label><input id="status-protocolo" placeholder="Ex: SPP1111111111" oninput="this.value=formatarProtocoloRedesim(this.value)" maxlength="20"/></div>
       <div class="fg full"><label>Observação</label>
         <textarea id="status-obs" placeholder="Ex: Aguardando retorno da Junta Comercial..." style="min-height:70px"></textarea>
       </div>
@@ -1054,6 +1056,8 @@ tbody tr:hover td{background:var(--bg3);}
         <div class="fg full"><label>Endereço comercial</label><input id="np-endereco" placeholder="Rua, número, bairro"/></div>
         <div class="fg"><label>Cidade / UF</label><input id="np-cidade" placeholder="São Paulo / SP"/></div>
         <div class="fg"><label>CEP</label><input id="np-cep" placeholder="00000-000"/></div>
+        <div class="fg"><label>UF (protocolo REDESIM)</label><input id="np-uf" placeholder="SP" maxlength="2" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"/></div>
+        <div class="fg"><label>Número de protocolo REDESIM</label><input id="np-protocolo" placeholder="Preencher quando disponível" oninput="this.value=formatarProtocoloRedesim(this.value)" maxlength="20"/></div>
       </div>
     </div>
 
@@ -1566,7 +1570,9 @@ window.salvarNovoProcessoFirebase = async function() {
     cnaeSecundarios: document.getElementById("np-cnae-sec")?.value.trim() || '',
     endereco: document.getElementById("np-endereco")?.value.trim() || '',
     cidade: document.getElementById("np-cidade")?.value.trim() || '',
-    cep: document.getElementById("np-cep")?.value.trim() || ''
+    cep: document.getElementById("np-cep")?.value.trim() || '',
+    uf: document.getElementById("np-uf")?.value.trim().toUpperCase() || '',
+    numeroProtocolo: document.getElementById("np-protocolo")?.value.trim() || ''
   };
 
   // Quadro societário — lê todas as linhas adicionadas dinamicamente
@@ -1644,6 +1650,8 @@ window.salvarNovoProcessoFirebase = async function() {
     document.getElementById("np-endereco").value = "";
     document.getElementById("np-cidade").value = "";
     document.getElementById("np-cep").value = "";
+    document.getElementById("np-uf").value = "";
+    document.getElementById("np-protocolo").value = "";
     document.getElementById("np-socios-lista").innerHTML = "";
     document.getElementById("np-socios-count").textContent = "";
     document.getElementById("np-conselho").value = "";
@@ -2718,6 +2726,12 @@ window.formatarCNPJ = function(v) {
   return v;
 };
 
+// Máscara leve do protocolo REDESIM (padrão geral: UF + letra do tipo + sequência,
+// ex: SPP1111111111 — varia por estado, então só normaliza maiúsculas/caracteres, sem regex rígido)
+window.formatarProtocoloRedesim = function(v) {
+  return v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20);
+};
+
 window.buscarCNPJ = async function(inputId, prefix) {
   const cnpjRaw = document.getElementById(inputId).value.replace(/\D/g, '');
   const statusEl = document.getElementById(prefix + '-cnpj-status');
@@ -2758,12 +2772,14 @@ window.buscarCNPJ = async function(inputId, prefix) {
   const endEl  = document.getElementById(prefix + '-endereco');
   const cidEl  = document.getElementById(prefix + '-cidade');
   const cepEl  = document.getElementById(prefix + '-cep');
+  const ufEl   = document.getElementById(prefix + '-uf');
 
   if (nomeEl && !nomeEl.value) nomeEl.value = d.nome_fantasia || d.razao_social || '';
   if (telEl && !telEl.value && d.ddd_telefone_1) telEl.value = d.ddd_telefone_1;
   if (endEl) endEl.value = [d.logradouro, d.numero, d.bairro].filter(Boolean).join(', ');
   if (cidEl) cidEl.value = [d.municipio, d.uf].filter(Boolean).join(' / ');
   if (cepEl) cepEl.value = d.cep || '';
+  if (ufEl && !ufEl.value) ufEl.value = d.uf || '';
 
   if (statusEl) {
     const situacao = d.descricao_situacao_cadastral || '';
@@ -3051,8 +3067,12 @@ function abrirAtualizarStatus() {
     const sv = document.getElementById('status-val');
     const se = document.getElementById('status-etapa');
     const so = document.getElementById('status-obs');
+    const su = document.getElementById('status-uf');
+    const sp = document.getElementById('status-protocolo');
     if (sv && p.status) sv.value = p.status;
     if (so) so.value = p.obs || '';
+    if (su) su.value = p.uf || '';
+    if (sp) sp.value = p.numeroProtocolo || '';
     if (se && p.etapa) Array.from(se.options).forEach(o => { o.selected = o.text === p.etapa; });
   }
   const el = document.getElementById('modal-atualizar-status');
@@ -3064,6 +3084,8 @@ async function salvarStatus() {
   const status = document.getElementById('status-val').value;
   const etapa  = document.getElementById('status-etapa').value;
   const obs    = document.getElementById('status-obs').value.trim();
+  const uf     = document.getElementById('status-uf').value.trim().toUpperCase();
+  const numeroProtocolo = document.getElementById('status-protocolo').value.trim();
 
   const extra = {};
   let historico = p?.historico || [];
@@ -3081,10 +3103,10 @@ async function salvarStatus() {
   }
 
   if (p?.id) {
-    try { await updateDoc(doc(db, 'processos', p.id), { status, etapa, obs, ...extra }); showSaveIndicator(true); }
+    try { await updateDoc(doc(db, 'processos', p.id), { status, etapa, obs, uf, numeroProtocolo, ...extra }); showSaveIndicator(true); }
     catch(e) { alert('Erro: ' + e.message); return; }
   }
-  window._processoAberto = { ...p, status, etapa, obs, ...extra };
+  window._processoAberto = { ...p, status, etapa, obs, uf, numeroProtocolo, ...extra };
   document.getElementById('modal-atualizar-status').classList.remove('open');
   openProcesso(window._processoAberto);
   if (p?.id) {
@@ -3507,17 +3529,12 @@ window.reabrirEtapa = async function(etapaIdx) {
 // ═══════════════════════════════════════════════════════════════════════════
 // KANBAN DINÂMICO — carrega processos reais do Firebase
 // ═══════════════════════════════════════════════════════════════════════════
-async function renderKanban() {
+let _kanbanUnsub = null;
+let _kanbanCache = [];
+
+function renderKanbanBoard(processos) {
   const board = document.getElementById('kanban-board');
   if (!board) return;
-  board.innerHTML = '<div style="text-align:center;padding:32px;color:var(--text3);font-size:13px;width:100%">Carregando...</div>';
-
-  // Busca todos os processos
-  let processos = [];
-  try {
-    const snap = await getDocs(collection(db, 'processos'));
-    processos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch(e) { console.warn('Kanban:', e.message); }
 
   // Agrupa por etapa
   const colunas = {};
@@ -3563,6 +3580,25 @@ async function renderKanban() {
       <div class="kol-cards">${cardsHtml}</div>
     </div>`;
   }).join('');
+}
+
+// Assina o Kanban uma única vez em tempo real (onSnapshot); toggles subsequentes
+// só re-renderizam a partir do cache, sem recriar o listener.
+function renderKanban() {
+  const board = document.getElementById('kanban-board');
+  if (!board) return;
+
+  if (!_kanbanUnsub) {
+    board.innerHTML = '<div style="text-align:center;padding:32px;color:var(--text3);font-size:13px;width:100%">Carregando...</div>';
+    try {
+      _kanbanUnsub = onSnapshot(collection(db, 'processos'), (snap) => {
+        _kanbanCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderKanbanBoard(_kanbanCache);
+      }, (e) => console.warn('Kanban:', e.message));
+    } catch(e) { console.warn('Kanban:', e.message); }
+  } else {
+    renderKanbanBoard(_kanbanCache);
+  }
 }
 
 window.renderKanban = renderKanban;
@@ -4165,6 +4201,24 @@ function openProcesso(p) {
           ${p.cnae ? `<div style="grid-column:1/-1"><span style="color:var(--text3)">CNAE principal:</span> ${p.cnae}</div>` : ''}
           ${p.endereco ? `<div style="grid-column:1/-1"><span style="color:var(--text3)">Endereço:</span> ${p.endereco}${p.cidade ? ' — ' + p.cidade : ''}${p.cep ? ' — ' + p.cep : ''}</div>` : ''}
         </div>
+      </div>`;
+    }
+
+    if (p.numeroProtocolo || p.uf) {
+      const hist = (p.historicoRedesim || []).slice().reverse();
+      blocos += `<div style="margin-top:14px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Protocolo REDESIM</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;">
+          ${p.numeroProtocolo ? `<div><span style="color:var(--text3)">Protocolo:</span> ${p.numeroProtocolo}</div>` : ''}
+          ${p.uf ? `<div><span style="color:var(--text3)">UF:</span> ${p.uf}</div>` : ''}
+          ${p.statusRedesim ? `<span class="badge b-blue">${p.statusRedesim}</span>` : ''}
+          ${p.numeroProtocolo ? `<a href="https://redesimservicos.rfb.gov.br/consultapedido/consultar" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Consultar no REDESIM →</a>` : ''}
+        </div>
+        ${p.statusRedesimAtualizadoEm ? `<div style="font-size:10.5px;color:var(--text3);margin-top:4px;">Verificado automaticamente em ${new Date(p.statusRedesimAtualizadoEm).toLocaleString('pt-BR')}${p.uf !== 'SP' ? ' (só SP tem verificação automática por enquanto)' : ''}</div>` : ''}
+        ${p.numeroProtocolo && !p.statusRedesimAtualizadoEm ? `<div style="font-size:10.5px;color:var(--text3);margin-top:4px;">Abre o portal oficial da Receita Federal — é preciso logar com o gov.br da contabilidade e colar o protocolo acima.</div>` : ''}
+        ${hist.length ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:3px;">
+          ${hist.slice(0, 5).map(h => `<div style="font-size:11px;color:var(--text3)">${new Date(h.data).toLocaleString('pt-BR')} — ${h.statusAnterior ? h.statusAnterior + ' → ' : ''}${h.statusNovo}</div>`).join('')}
+        </div>` : ''}
       </div>`;
     }
 

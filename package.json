@@ -1,0 +1,10 @@
+{
+  "name": "lexor-hub",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "aes-bridge": "^2.1.0",
+    "firebase-admin": "^14.3.0"
+  }
+}

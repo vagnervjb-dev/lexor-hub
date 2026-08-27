@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/checar-redesim-sp",
+      "schedule": "0 11 * * *"
+    }
+  ]
+}
