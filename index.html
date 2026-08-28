@@ -3930,8 +3930,22 @@ window.atualizarPreviewContrato = function() {
 // Preenche um modelo .docx com os dados informados e devolve o Blob final.
 // Compartilhado entre a geração dentro de um processo e a geração avulsa.
 async function gerarBlobContrato(modelo, dados) {
-  const resp = await fetch(modelo.url);
-  if (!resp.ok) throw new Error('Não foi possível carregar o modelo de contrato.');
+  if (!modelo?.id) throw new Error('O modelo selecionado não possui um identificador válido.');
+  const idToken = await auth.currentUser.getIdToken(true);
+  const resp = await fetch(`/api/modelo-contrato?modeloId=${encodeURIComponent(modelo.id)}`, {
+    headers: { 'Authorization': `Bearer ${idToken}` }
+  });
+  if (!resp.ok) {
+    const raw = await resp.text();
+    let detalhe = '';
+    try {
+      const erro = JSON.parse(raw);
+      detalhe = erro.detalhe || erro.error || '';
+    } catch {
+      detalhe = raw;
+    }
+    throw new Error(detalhe || 'Não foi possível carregar o modelo de contrato.');
+  }
   const arrayBuffer = await resp.arrayBuffer();
   const zip = new PizZip(arrayBuffer);
   const docx = new window.docxtemplater(zip, { delimiters: { start: '{{', end: '}}' }, paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
