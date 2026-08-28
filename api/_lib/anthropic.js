@@ -40,7 +40,15 @@ export function assertAnthropicConfigured() {
   getWorkspaceId();
 }
 
-export async function createStructuredMessage({ messages, schema, maxTokens = 4096 }) {
+export function createStructuredMessage({ messages, schema, maxTokens = 4096 }) {
+  return createMessage({ messages, schema, maxTokens });
+}
+
+export function createJsonMessage({ messages, maxTokens = 4096 }) {
+  return createMessage({ messages, maxTokens });
+}
+
+async function createMessage({ messages, schema, maxTokens }) {
   const workspaceId = getWorkspaceId();
   const headers = {
     'Content-Type': 'application/json',
@@ -49,20 +57,24 @@ export async function createStructuredMessage({ messages, schema, maxTokens = 40
   };
   if (workspaceId) headers['anthropic-workspace-id'] = workspaceId;
 
+  const body = {
+    model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
+    max_tokens: maxTokens,
+    messages,
+  };
+  if (schema) {
+    body.output_config = {
+      format: {
+        type: 'json_schema',
+        schema,
+      },
+    };
+  }
+
   const response = await fetch(ANTHROPIC_API_URL, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
-      max_tokens: maxTokens,
-      messages,
-      output_config: {
-        format: {
-          type: 'json_schema',
-          schema,
-        },
-      },
-    }),
+    body: JSON.stringify(body),
   });
 
   const raw = await response.text();
@@ -85,12 +97,24 @@ export async function createStructuredMessage({ messages, schema, maxTokens = 40
 
   const outputText = payload.content?.find((block) => block.type === 'text')?.text;
   if (!outputText) {
-    throw new Error('Anthropic não devolveu conteúdo estruturado.');
+    throw new Error('Anthropic não devolveu conteúdo em texto.');
   }
 
+  const trimmed = outputText.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const candidate = fenced ? fenced[1] : trimmed;
   try {
-    return JSON.parse(outputText);
+    return JSON.parse(candidate);
   } catch {
-    throw new Error('Anthropic devolveu uma saída que não é JSON válido.');
+    const objectStart = candidate.indexOf('{');
+    const objectEnd = candidate.lastIndexOf('}');
+    if (objectStart >= 0 && objectEnd > objectStart) {
+      try {
+        return JSON.parse(candidate.slice(objectStart, objectEnd + 1));
+      } catch {
+        // Cai na mensagem padronizada abaixo.
+      }
+    }
+    throw new Error('Anthropic devolveu uma saída que não contém JSON válido.');
   }
 }

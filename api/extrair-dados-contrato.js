@@ -6,7 +6,7 @@
 // Requer ANTHROPIC_API_KEY nas env vars (Vercel), além das já usadas pelo
 // firebase-admin (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).
 import { getFirebaseAdmin } from './_lib/firebase-admin.js';
-import { assertAnthropicConfigured, createStructuredMessage } from './_lib/anthropic.js';
+import { assertAnthropicConfigured, createJsonMessage } from './_lib/anthropic.js';
 
 const MEDIA_TYPES_SUPORTADOS = {
   'application/pdf': 'application/pdf',
@@ -107,35 +107,37 @@ export default async function handler(req, res) {
       `(ex: RG, CPF, comprovante de endereço, cartão CNPJ), usados para preencher um contrato social. ` +
       `Extraia com precisão os seguintes campos a partir do conteúdo dos documentos acima. ` +
       `Se um campo não aparecer em nenhum documento, retorne uma string vazia para ele — nunca invente um valor. ` +
+      `Responda somente com um objeto JSON válido, sem markdown e sem explicações. ` +
+      `O objeto deve conter exatamente todas as chaves listadas, e todos os valores devem ser strings. ` +
       `Campos a extrair: ${variaveis.join(', ')}.`,
   });
 
-  const schema = {
-    type: 'object',
-    properties: Object.fromEntries(
-      variaveis.map((variavel) => [
-        variavel,
-        { type: 'string' },
-      ])
-    ),
-    required: variaveis,
-    additionalProperties: false,
-  };
-
-  let valores;
+  let extraidos;
   try {
-    valores = await createStructuredMessage({
+    extraidos = await createJsonMessage({
       messages: [{ role: 'user', content: contentBlocks }],
-      schema,
+      maxTokens: 8192,
     });
   } catch (e) {
     console.error('Erro ao chamar Claude:', e.message);
     return res.status(502).json({ error: 'falha_ia', detalhe: e.message });
   }
 
-  if (!valores || typeof valores !== 'object' || Array.isArray(valores)) {
+  if (!extraidos || typeof extraidos !== 'object' || Array.isArray(extraidos)) {
     return res.status(502).json({ error: 'extracao_sem_resultado' });
   }
+
+  // O modo de JSON livre evita que a gramática rígida da Anthropic exceda o
+  // limite com modelos grandes. Normalizamos a resposta aqui para garantir que
+  // a tela receba somente as variáveis do modelo, todas como strings.
+  const valores = Object.fromEntries(
+    variaveis.map((variavel) => {
+      const valor = extraidos[variavel];
+      if (typeof valor === 'string') return [variavel, valor];
+      if (typeof valor === 'number' || typeof valor === 'boolean') return [variavel, String(valor)];
+      return [variavel, ''];
+    })
+  );
 
   return res.status(200).json({ valores });
 }
