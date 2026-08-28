@@ -7,10 +7,10 @@
   ],
   "functions": {
     "api/extrair-dados-contrato.js": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/extrair-dados-processo.js": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/verificar-debitos.js": {
       "maxDuration": 300

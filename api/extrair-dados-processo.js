@@ -117,7 +117,7 @@ export default async function handler(req, res) {
   let response;
   try {
     response = await anthropic.messages.parse({
-      model: 'claude-opus-5',
+      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
       max_tokens: 4096,
       messages: [{ role: 'user', content: contentBlocks }],
       output_config: { format: zodOutputFormat(criarDadosProcessoSchema(z)) },
