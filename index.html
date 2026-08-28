@@ -613,7 +613,7 @@ tbody tr:hover td{background:var(--bg3);}
       <div class="card">
         <div class="fg full" style="margin-bottom:10px">
           <label>Modelo de contrato</label>
-          <select id="avulso-select-modelo" onchange="atualizarBotaoExtrairAvulso()">
+          <select id="avulso-select-modelo" onchange="onModeloContratoSelecionadoAvulso()">
             <option value="">Selecione um modelo...</option>
           </select>
         </div>
@@ -3438,14 +3438,7 @@ window.extrairDadosProcesso = async function() {
   btn.disabled = true;
   statusEl.textContent = '⏳ Lendo documentos e extraindo dados com IA — pode levar até 1 minuto...';
   try {
-    const idToken = await auth.currentUser.getIdToken();
-    const resp = await fetch('/api/extrair-dados-processo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-      body: JSON.stringify({ processoId: p.id, documentoIds })
-    });
-    const json = await resp.json();
-    if (!resp.ok) throw new Error(json.error || 'Falha na extração');
+    const json = await chamarApiIA('/api/extrair-dados-processo', { processoId: p.id, documentoIds });
 
     const v = json.valores;
     const camposLista = document.getElementById('extrair-processo-campos');
@@ -3550,14 +3543,7 @@ window.verificarDebitos = async function() {
   if (btn) btn.disabled = true;
   if (statusEl) statusEl.textContent = '⏳ Consultando PGFN, Simples Nacional e Situação Fiscal — pode levar até 1 minuto...';
   try {
-    const idToken = await auth.currentUser.getIdToken();
-    const resp = await fetch('/api/verificar-debitos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-      body: JSON.stringify({ processoId: p.id })
-    });
-    const json = await resp.json();
-    if (!resp.ok) throw new Error(json.error || 'Falha ao verificar débitos');
+    const json = await chamarApiIA('/api/verificar-debitos', { processoId: p.id });
 
     window._processoAberto = { ...p, debitosVerificados: json.resultado };
     window.openProcesso(window._processoAberto);
@@ -3709,8 +3695,28 @@ window.atualizarBotaoExtrair = function() {
 };
 
 window.onModeloContratoSelecionado = function() {
+  const modeloId = document.getElementById('contrato-select-modelo').value;
+  window._contratoModeloSelecionado = (window._modelosContrato || []).find(m => m.id === modeloId) || null;
+  renderCamposContrato();
   atualizarBotaoExtrair();
 };
+
+// Mostra os campos do modelo assim que ele é escolhido — preenchíveis na hora,
+// mesmo sem nenhum documento anexado. A extração por IA (abaixo) só complementa
+// o que a pessoa não preencher, nunca sobrescreve o que já foi digitado.
+function renderCamposContrato() {
+  const modelo = window._contratoModeloSelecionado;
+  const wrap = document.getElementById('contrato-campos-wrap');
+  const camposLista = document.getElementById('contrato-campos-lista');
+  if (!modelo) { wrap.classList.add('hidden'); return; }
+  camposLista.innerHTML = (modelo.variaveis || []).map(v => `
+    <div class="fg">
+      <label>${v}</label>
+      <input type="text" class="contrato-campo-input" data-var="${v}" value="" oninput="atualizarPreviewContrato()"/>
+    </div>`).join('');
+  wrap.classList.remove('hidden');
+  atualizarPreviewContrato();
+}
 
 window.extrairDadosContrato = async function() {
   const p = window._processoAberto;
@@ -3723,26 +3729,13 @@ window.extrairDadosContrato = async function() {
   btn.disabled = true;
   statusEl.textContent = '⏳ Lendo documentos e extraindo dados com IA — pode levar até 1 minuto...';
   try {
-    const idToken = await auth.currentUser.getIdToken();
-    const resp = await fetch('/api/extrair-dados-contrato', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-      body: JSON.stringify({ processoId: p.id, modeloId, documentoIds })
+    const json = await chamarApiIA('/api/extrair-dados-contrato', { processoId: p.id, modeloId, documentoIds });
+
+    document.querySelectorAll('.contrato-campo-input').forEach(input => {
+      const v = input.dataset.var;
+      if (!input.value && json.valores[v]) input.value = json.valores[v];
     });
-    const json = await resp.json();
-    if (!resp.ok) throw new Error(json.error || 'Falha na extração');
 
-    const modelo = (window._modelosContrato || []).find(m => m.id === modeloId);
-    window._contratoModeloSelecionado = modelo;
-
-    const camposLista = document.getElementById('contrato-campos-lista');
-    camposLista.innerHTML = (modelo.variaveis || []).map(v => `
-      <div class="fg">
-        <label>${v}</label>
-        <input type="text" class="contrato-campo-input" data-var="${v}" value="${(json.valores[v] ?? '').toString().replace(/"/g,'&quot;')}" oninput="atualizarPreviewContrato()"/>
-      </div>`).join('');
-
-    document.getElementById('contrato-campos-wrap').classList.remove('hidden');
     statusEl.textContent = '✓ Dados extraídos — revise os campos abaixo antes de gerar o contrato.';
     atualizarPreviewContrato();
   } catch(e) {
@@ -3788,6 +3781,27 @@ function lerCamposEditaveis(seletor) {
   const dados = {};
   document.querySelectorAll(seletor).forEach(input => { dados[input.dataset.var] = input.value || ''; });
   return dados;
+}
+
+// Fetch autenticado pra endpoints /api/* que devolvem JSON — se a função
+// quebrar na Vercel (ex: env var faltando) ela responde uma página de erro em
+// HTML, e um resp.json() cru dá um erro críptico tipo "Unexpected token 'A'".
+// Isso aqui detecta esse caso e devolve uma mensagem que dá pra agir.
+async function chamarApiIA(url, body) {
+  const idToken = await auth.currentUser.getIdToken();
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+    body: JSON.stringify(body)
+  });
+  const texto = await resp.text();
+  let json;
+  try { json = JSON.parse(texto); }
+  catch {
+    throw new Error(`Erro no servidor (${resp.status}). Provavelmente a chave de IA (ANTHROPIC_API_KEY) não está configurada na Vercel — confirma isso com quem administra o deploy.`);
+  }
+  if (!resp.ok) throw new Error(json.error || 'Falha na requisição.');
+  return json;
 }
 
 window.gerarContrato = async function() {
@@ -3888,6 +3902,30 @@ window.atualizarBotaoExtrairAvulso = function() {
   if (btn) btn.disabled = !(algumaSelecionada && modeloSelecionado);
 };
 
+window.onModeloContratoSelecionadoAvulso = function() {
+  const modeloId = document.getElementById('avulso-select-modelo').value;
+  window._avulsoModeloSelecionado = (window._modelosContrato || []).find(m => m.id === modeloId) || null;
+  renderCamposAvulso();
+  atualizarBotaoExtrairAvulso();
+};
+
+// Mostra os campos do modelo assim que ele é escolhido — preenchíveis na hora,
+// mesmo sem nenhum documento anexado. A extração por IA (abaixo) só complementa
+// o que a pessoa não preencher, nunca sobrescreve o que já foi digitado.
+function renderCamposAvulso() {
+  const modelo = window._avulsoModeloSelecionado;
+  const wrap = document.getElementById('avulso-campos-wrap');
+  const camposLista = document.getElementById('avulso-campos-lista');
+  if (!modelo) { wrap.classList.add('hidden'); return; }
+  camposLista.innerHTML = (modelo.variaveis || []).map(v => `
+    <div class="fg">
+      <label>${v}</label>
+      <input type="text" class="avulso-campo-input" data-var="${v}" value="" oninput="atualizarPreviewContratoAvulso()"/>
+    </div>`).join('');
+  wrap.classList.remove('hidden');
+  atualizarPreviewContratoAvulso();
+}
+
 // Apaga do Storage os documentos temporários (todos, ou só os já usados numa extração).
 async function limparDocsAvulsoDoStorage(docs) {
   await Promise.all(docs.map(d => deleteObject(ref(storage, d.storagePath)).catch(e => console.warn('Storage delete:', e.message))));
@@ -3915,29 +3953,15 @@ window.extrairDadosContratoAvulso = async function() {
   btn.disabled = true;
   statusEl.textContent = '⏳ Lendo documentos e extraindo dados com IA — pode levar até 1 minuto...';
   try {
-    const idToken = await auth.currentUser.getIdToken();
-    const resp = await fetch('/api/extrair-dados-contrato', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-      body: JSON.stringify({
-        modeloId,
-        documentos: documentosSelecionados.map(d => ({ url: d.url, tipo: d.tipo, nome: d.nome }))
-      })
+    const json = await chamarApiIA('/api/extrair-dados-contrato', {
+      modeloId,
+      documentos: documentosSelecionados.map(d => ({ url: d.url, tipo: d.tipo, nome: d.nome }))
     });
-    const json = await resp.json();
-    if (!resp.ok) throw new Error(json.error || 'Falha na extração');
 
-    const modelo = (window._modelosContrato || []).find(m => m.id === modeloId);
-    window._avulsoModeloSelecionado = modelo;
-
-    const camposLista = document.getElementById('avulso-campos-lista');
-    camposLista.innerHTML = (modelo.variaveis || []).map(v => `
-      <div class="fg">
-        <label>${v}</label>
-        <input type="text" class="avulso-campo-input" data-var="${v}" value="${(json.valores[v] ?? '').toString().replace(/"/g,'&quot;')}" oninput="atualizarPreviewContratoAvulso()"/>
-      </div>`).join('');
-
-    document.getElementById('avulso-campos-wrap').classList.remove('hidden');
+    document.querySelectorAll('.avulso-campo-input').forEach(input => {
+      const v = input.dataset.var;
+      if (!input.value && json.valores[v]) input.value = json.valores[v];
+    });
     atualizarPreviewContratoAvulso();
 
     // Documentos já foram lidos pela IA — apaga do Storage, é avulso mesmo.
