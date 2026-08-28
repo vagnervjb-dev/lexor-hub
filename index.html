@@ -3845,7 +3845,7 @@ async function chamarApiIA(url, body) {
   let json;
   try { json = JSON.parse(texto); }
   catch {
-    throw new Error(`Erro no servidor (${resp.status}). Provavelmente a chave de IA (ANTHROPIC_API_KEY) não está configurada na Vercel — confirma isso com quem administra o deploy.`);
+    throw new Error(`Erro no servidor (${resp.status}). Provavelmente falta alguma variável de ambiente na Vercel pra esse recurso (chave de IA, Firebase ou Infosimples, dependendo da tela) — confirma isso com quem administra o deploy.`);
   }
   if (!resp.ok) throw new Error(json.error || 'Falha na requisição.');
   return json;
