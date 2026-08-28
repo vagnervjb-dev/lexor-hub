@@ -8,18 +8,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import admin from 'firebase-admin';
+import { db, auth } from './_lib/firebase-admin.js';
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const db = admin.firestore();
 const anthropic = new Anthropic();
 
 const MEDIA_TYPES_SUPORTADOS = {
@@ -44,7 +34,7 @@ export default async function handler(req, res) {
   const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!idToken) return res.status(401).json({ error: 'sem_token' });
   try {
-    await admin.auth().verifyIdToken(idToken);
+    await auth.verifyIdToken(idToken);
   } catch {
     return res.status(401).json({ error: 'token_invalido' });
   }

@@ -5,20 +5,9 @@
 // Cobertura: só SP. A Infosimples não tem produto equivalente para outros
 // estados (verificado em 2026-08) — processos de outras UFs continuam usando
 // o botão "Consultar no REDESIM" manual já existente no painel do processo.
-import admin from 'firebase-admin';
+import { db, FieldValue } from './_lib/firebase-admin.js';
 import { obterCertificadoInfosimples } from './_lib/certificado-infosimples.js';
 import { getEncrypt } from './_lib/aes-bridge-encrypt.js';
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const db = admin.firestore();
 
 const INFOSIMPLES_URL = 'https://api.infosimples.com/api/v2/consultas/junta-comercial/sp/redesim/acp';
 
@@ -100,7 +89,7 @@ export default async function handler(req, res) {
       if (r.status && r.status !== p.statusRedesim) {
         updates.statusRedesim = r.status;
         updates.statusRedesimAtualizadoEm = agora;
-        updates.historicoRedesim = admin.firestore.FieldValue.arrayUnion({
+        updates.historicoRedesim = FieldValue.arrayUnion({
           data: agora,
           statusAnterior: p.statusRedesim || null,
           statusNovo: r.status,
