@@ -8,6 +8,16 @@
 // de o handler começar.
 
 let servicesPromise;
+const EXPECTED_PROJECT_ID = 'lexorhub-1e7cb';
+
+function cleanEnvValue(value) {
+  const trimmed = value.trim();
+  const quote = trimmed[0];
+  if ((quote === '"' || quote === "'") && trimmed.at(-1) === quote) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
 
 export function getFirebaseAdmin() {
   if (!servicesPromise) {
@@ -26,6 +36,15 @@ async function initializeFirebaseAdmin() {
     throw new Error(`Variáveis ausentes na Vercel: ${missing.join(', ')}`);
   }
 
+  const projectId = cleanEnvValue(process.env.FIREBASE_PROJECT_ID);
+  const clientEmail = cleanEnvValue(process.env.FIREBASE_CLIENT_EMAIL);
+  const privateKey = cleanEnvValue(process.env.FIREBASE_PRIVATE_KEY).replace(/\\n/g, '\n');
+  if (projectId !== EXPECTED_PROJECT_ID) {
+    throw new Error(
+      `FIREBASE_PROJECT_ID aponta para "${projectId}"; esperado "${EXPECTED_PROJECT_ID}".`
+    );
+  }
+
   const [{ initializeApp, cert, getApps }, { getFirestore, FieldValue }, { getAuth }] =
     await Promise.all([
       import('firebase-admin/app'),
@@ -36,9 +55,9 @@ async function initializeFirebaseAdmin() {
   if (!getApps().length) {
     initializeApp({
       credential: cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        projectId,
+        clientEmail,
+        privateKey,
       }),
     });
   }

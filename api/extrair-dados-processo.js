@@ -56,8 +56,9 @@ export default async function handler(req, res) {
 
   try {
     await auth.verifyIdToken(idToken);
-  } catch {
-    return res.status(401).json({ error: 'token_invalido' });
+  } catch (e) {
+    console.error('Token Firebase rejeitado:', e.code || e.message);
+    return res.status(401).json({ error: 'token_invalido', detalhe: e.code || e.message });
   }
 
   let anthropic;

@@ -3915,7 +3915,9 @@ function lerCamposEditaveis(seletor) {
 // HTML, e um resp.json() cru dá um erro críptico tipo "Unexpected token 'A'".
 // Isso aqui detecta esse caso e devolve uma mensagem que dá pra agir.
 async function chamarApiIA(url, body) {
-  const idToken = await auth.currentUser.getIdToken();
+  // Força a renovação para não reutilizar um token expirado/revogado de uma
+  // aba que ficou aberta durante um deploy do backend.
+  const idToken = await auth.currentUser.getIdToken(true);
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
@@ -3927,7 +3929,10 @@ async function chamarApiIA(url, body) {
   catch {
     throw new Error(`Erro no servidor (${resp.status}). Provavelmente falta alguma variável de ambiente na Vercel pra esse recurso (chave de IA, Firebase ou Infosimples, dependendo da tela) — confirma isso com quem administra o deploy.`);
   }
-  if (!resp.ok) throw new Error(json.error || 'Falha na requisição.');
+  if (!resp.ok) {
+    const mensagem = json.detalhe ? `${json.error}: ${json.detalhe}` : json.error;
+    throw new Error(mensagem || 'Falha na requisição.');
+  }
   return json;
 }
 
