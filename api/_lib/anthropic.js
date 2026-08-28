@@ -21,18 +21,37 @@ function getApiKey() {
   return apiKey;
 }
 
+function getWorkspaceId() {
+  const rawWorkspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  if (!rawWorkspaceId) return null;
+
+  const quote = rawWorkspaceId[0];
+  const workspaceId = (quote === '"' || quote === "'") && rawWorkspaceId.at(-1) === quote
+    ? rawWorkspaceId.slice(1, -1)
+    : rawWorkspaceId;
+  if (!workspaceId.startsWith('wrkspc_')) {
+    throw new Error('ANTHROPIC_WORKSPACE_ID inválida: o ID deve começar com "wrkspc_".');
+  }
+  return workspaceId;
+}
+
 export function assertAnthropicConfigured() {
   getApiKey();
+  getWorkspaceId();
 }
 
 export async function createStructuredMessage({ messages, schema, maxTokens = 4096 }) {
+  const workspaceId = getWorkspaceId();
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-api-key': getApiKey(),
+    'anthropic-version': ANTHROPIC_VERSION,
+  };
+  if (workspaceId) headers['anthropic-workspace-id'] = workspaceId;
+
   const response = await fetch(ANTHROPIC_API_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': getApiKey(),
-      'anthropic-version': ANTHROPIC_VERSION,
-    },
+    headers,
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
       max_tokens: maxTokens,
@@ -56,6 +75,11 @@ export async function createStructuredMessage({ messages, schema, maxTokens = 40
 
   if (!response.ok) {
     const detail = payload?.error?.message || payload?.error?.type || `HTTP ${response.status}`;
+    if (detail.includes('anthropic-workspace-id is required')) {
+      throw new Error(
+        'Esta chave exige um workspace. Adicione ANTHROPIC_WORKSPACE_ID na Vercel com o ID que começa por "wrkspc_".'
+      );
+    }
     throw new Error(`Anthropic ${response.status}: ${detail}`);
   }
 
