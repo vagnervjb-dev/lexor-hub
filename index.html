@@ -642,6 +642,12 @@ tbody tr:hover td{background:var(--bg3);}
         <div id="avulso-campos-wrap" class="hidden">
           <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Revise os dados extraídos antes de gerar</div>
           <div id="avulso-campos-lista" class="form-grid" style="margin-bottom:12px"></div>
+          <div id="avulso-campos-preenchidos-wrap" class="hidden" style="margin-bottom:12px">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="toggleCamposPreenchidos('avulso')">
+              <span id="avulso-campos-preenchidos-sinal">+</span> <span id="avulso-campos-preenchidos-count">0</span> campo(s) já preenchido(s) — clique pra revisar
+            </button>
+            <div id="avulso-campos-preenchidos-lista" class="form-grid hidden" style="margin-top:8px"></div>
+          </div>
           <div style="display:flex;gap:8px;margin-bottom:14px">
             <button class="btn btn-accent btn-sm" onclick="gerarContratoAvulso()">📄 Gerar contrato (.docx)</button>
           </div>
@@ -979,6 +985,12 @@ tbody tr:hover td{background:var(--bg3);}
       <div id="contrato-campos-wrap" class="hidden">
         <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Revise os dados extraídos antes de gerar</div>
         <div id="contrato-campos-lista" class="form-grid" style="margin-bottom:12px"></div>
+        <div id="contrato-campos-preenchidos-wrap" class="hidden" style="margin-bottom:12px">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="toggleCamposPreenchidos('contrato')">
+            <span id="contrato-campos-preenchidos-sinal">+</span> <span id="contrato-campos-preenchidos-count">0</span> campo(s) já preenchido(s) — clique pra revisar
+          </button>
+          <div id="contrato-campos-preenchidos-lista" class="form-grid hidden" style="margin-top:8px"></div>
+        </div>
         <div style="display:flex;gap:8px;margin-bottom:14px">
           <button class="btn btn-accent btn-sm" onclick="gerarContrato()">📄 Gerar contrato (.docx)</button>
         </div>
@@ -3705,18 +3717,53 @@ window.onModeloContratoSelecionado = function() {
 // mesmo sem nenhum documento anexado. A extração por IA (abaixo) só complementa
 // o que a pessoa não preencher, nunca sobrescreve o que já foi digitado.
 function renderCamposContrato() {
-  const modelo = window._contratoModeloSelecionado;
   const wrap = document.getElementById('contrato-campos-wrap');
-  const camposLista = document.getElementById('contrato-campos-lista');
-  if (!modelo) { wrap.classList.add('hidden'); return; }
-  camposLista.innerHTML = (modelo.variaveis || []).map(v => `
-    <div class="fg">
-      <label>${v}</label>
-      <input type="text" class="contrato-campo-input" data-var="${v}" value="" oninput="atualizarPreviewContrato()"/>
-    </div>`).join('');
+  if (!window._contratoModeloSelecionado) { wrap.classList.add('hidden'); return; }
+  renderGruposCampos('contrato', {});
   wrap.classList.remove('hidden');
   atualizarPreviewContrato();
 }
+
+// Separa os campos em dois grupos: os vazios (precisam de atenção, sempre
+// visíveis) e os já preenchidos (colapsados atrás de um "+", pra não deixar o
+// formulário gigante quando o modelo tem muitas variáveis — mas continuam
+// abertos pra revisão, nunca escondidos de vez).
+function renderGruposCampos(prefixo, valores) {
+  const modelo = prefixo === 'contrato' ? window._contratoModeloSelecionado : window._avulsoModeloSelecionado;
+  if (!modelo) return;
+  const previewFn = prefixo === 'contrato' ? 'atualizarPreviewContrato' : 'atualizarPreviewContratoAvulso';
+  const campoHtml = (v) => `
+    <div class="fg">
+      <label>${v}</label>
+      <input type="text" class="${prefixo}-campo-input" data-var="${v}" value="${(valores[v]||'').toString().replace(/"/g,'&quot;')}" oninput="${previewFn}()"/>
+    </div>`;
+
+  const todas = modelo.variaveis || [];
+  const vazios = todas.filter(v => !valores[v]);
+  const preenchidos = todas.filter(v => valores[v]);
+
+  document.getElementById(`${prefixo}-campos-lista`).innerHTML = vazios.map(campoHtml).join('')
+    || '<div style="font-size:12px;color:var(--text3)">Todos os campos foram preenchidos — revise no bloco abaixo.</div>';
+
+  const preenchidosWrap = document.getElementById(`${prefixo}-campos-preenchidos-wrap`);
+  const preenchidosLista = document.getElementById(`${prefixo}-campos-preenchidos-lista`);
+  if (preenchidos.length > 0) {
+    preenchidosLista.innerHTML = preenchidos.map(campoHtml).join('');
+    document.getElementById(`${prefixo}-campos-preenchidos-count`).textContent = preenchidos.length;
+    preenchidosWrap.classList.remove('hidden');
+  } else {
+    preenchidosWrap.classList.add('hidden');
+    preenchidosLista.innerHTML = '';
+  }
+}
+
+window.toggleCamposPreenchidos = function(prefixo) {
+  const lista = document.getElementById(`${prefixo}-campos-preenchidos-lista`);
+  const sinal = document.getElementById(`${prefixo}-campos-preenchidos-sinal`);
+  const abrindo = lista.classList.contains('hidden');
+  lista.classList.toggle('hidden');
+  if (sinal) sinal.textContent = abrindo ? '−' : '+';
+};
 
 window.extrairDadosContrato = async function() {
   const p = window._processoAberto;
@@ -3731,10 +3778,10 @@ window.extrairDadosContrato = async function() {
   try {
     const json = await chamarApiIA('/api/extrair-dados-contrato', { processoId: p.id, modeloId, documentoIds });
 
-    document.querySelectorAll('.contrato-campo-input').forEach(input => {
-      const v = input.dataset.var;
-      if (!input.value && json.valores[v]) input.value = json.valores[v];
-    });
+    const valores = {};
+    document.querySelectorAll('.contrato-campo-input').forEach(input => { valores[input.dataset.var] = input.value; });
+    (window._contratoModeloSelecionado?.variaveis || []).forEach(v => { if (!valores[v] && json.valores[v]) valores[v] = json.valores[v]; });
+    renderGruposCampos('contrato', valores);
 
     statusEl.textContent = '✓ Dados extraídos — revise os campos abaixo antes de gerar o contrato.';
     atualizarPreviewContrato();
@@ -3913,15 +3960,9 @@ window.onModeloContratoSelecionadoAvulso = function() {
 // mesmo sem nenhum documento anexado. A extração por IA (abaixo) só complementa
 // o que a pessoa não preencher, nunca sobrescreve o que já foi digitado.
 function renderCamposAvulso() {
-  const modelo = window._avulsoModeloSelecionado;
   const wrap = document.getElementById('avulso-campos-wrap');
-  const camposLista = document.getElementById('avulso-campos-lista');
-  if (!modelo) { wrap.classList.add('hidden'); return; }
-  camposLista.innerHTML = (modelo.variaveis || []).map(v => `
-    <div class="fg">
-      <label>${v}</label>
-      <input type="text" class="avulso-campo-input" data-var="${v}" value="" oninput="atualizarPreviewContratoAvulso()"/>
-    </div>`).join('');
+  if (!window._avulsoModeloSelecionado) { wrap.classList.add('hidden'); return; }
+  renderGruposCampos('avulso', {});
   wrap.classList.remove('hidden');
   atualizarPreviewContratoAvulso();
 }
@@ -3958,10 +3999,10 @@ window.extrairDadosContratoAvulso = async function() {
       documentos: documentosSelecionados.map(d => ({ url: d.url, tipo: d.tipo, nome: d.nome }))
     });
 
-    document.querySelectorAll('.avulso-campo-input').forEach(input => {
-      const v = input.dataset.var;
-      if (!input.value && json.valores[v]) input.value = json.valores[v];
-    });
+    const valores = {};
+    document.querySelectorAll('.avulso-campo-input').forEach(input => { valores[input.dataset.var] = input.value; });
+    (window._avulsoModeloSelecionado?.variaveis || []).forEach(v => { if (!valores[v] && json.valores[v]) valores[v] = json.valores[v]; });
+    renderGruposCampos('avulso', valores);
     atualizarPreviewContratoAvulso();
 
     // Documentos já foram lidos pela IA — apaga do Storage, é avulso mesmo.
