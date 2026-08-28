@@ -3927,6 +3927,9 @@ async function chamarApiIA(url, body) {
   let json;
   try { json = JSON.parse(texto); }
   catch {
+    if (resp.status === 504) {
+      throw new Error('A consulta ultrapassou o tempo limite do servidor. Tente novamente — os resultados que já deram certo serão reaproveitados.');
+    }
     throw new Error(`Erro no servidor (${resp.status}). Provavelmente falta alguma variável de ambiente na Vercel pra esse recurso (chave de IA, Firebase ou Infosimples, dependendo da tela) — confirma isso com quem administra o deploy.`);
   }
   if (!resp.ok) {

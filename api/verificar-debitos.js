@@ -18,7 +18,7 @@ async function consultarPgfn(cnpj) {
     token: process.env.INFOSIMPLES_TOKEN,
     cnpj,
     preferencia_emissao: '2via',
-    timeout: '300',
+    timeout: '240',
   });
   const resp = await fetch('https://api.infosimples.com/api/v2/consultas/receita-federal/pgfn', {
     method: 'POST',
@@ -39,7 +39,7 @@ async function consultarPgfn(cnpj) {
 }
 
 async function consultarSimplesNacional(cnpj) {
-  const body = new URLSearchParams({ token: process.env.INFOSIMPLES_TOKEN, cnpj, timeout: '300' });
+  const body = new URLSearchParams({ token: process.env.INFOSIMPLES_TOKEN, cnpj, timeout: '240' });
   const resp = await fetch('https://api.infosimples.com/api/v2/consultas/receita-federal/simples', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -67,7 +67,7 @@ async function consultarSituacaoFiscal(cnpj, db) {
     perfil_procurador_cnpj: cnpj,
     pkcs12_cert,
     pkcs12_pass,
-    timeout: '600',
+    timeout: '240',
   });
   const resp = await fetch('https://api.infosimples.com/api/v2/consultas/receita-federal/situacao', {
     method: 'POST',
@@ -118,12 +118,34 @@ export default async function handler(req, res) {
   const cnpj = (processoSnap.data().cnpj || '').replace(/\D/g, '');
   if (!cnpj) return res.status(400).json({ error: 'processo_sem_cnpj' });
 
-  const resultado = { cnpj, verificadoEm: new Date().toISOString() };
+  const agora = new Date();
+  const resultadoAnterior = processoSnap.data().debitosVerificados || {};
+  const verificacaoAnteriorEm = Date.parse(resultadoAnterior.verificadoEm || '');
+  const houveFalhaAnterior = Boolean(
+    resultadoAnterior.erroPgfn ||
+    resultadoAnterior.erroSimplesNacional ||
+    resultadoAnterior.erroSituacaoFiscal
+  );
+  // Em uma nova tentativa logo após uma falha parcial, preserva as consultas
+  // que já deram certo (e já foram cobradas) e executa somente as ausentes.
+  // Uma verificação completa continua sendo refeita normalmente depois disso.
+  const retentativaParcialRecente =
+    houveFalhaAnterior &&
+    Number.isFinite(verificacaoAnteriorEm) &&
+    agora.getTime() - verificacaoAnteriorEm < 30 * 60 * 1000;
+
+  const resultado = { cnpj, verificadoEm: agora.toISOString() };
 
   const [pgfn, simplesNacional, situacaoFiscal] = await Promise.allSettled([
-    consultarPgfn(cnpj),
-    consultarSimplesNacional(cnpj),
-    consultarSituacaoFiscal(cnpj, db),
+    retentativaParcialRecente && resultadoAnterior.pgfn
+      ? Promise.resolve(resultadoAnterior.pgfn)
+      : consultarPgfn(cnpj),
+    retentativaParcialRecente && resultadoAnterior.simplesNacional
+      ? Promise.resolve(resultadoAnterior.simplesNacional)
+      : consultarSimplesNacional(cnpj),
+    retentativaParcialRecente && resultadoAnterior.situacaoFiscal
+      ? Promise.resolve(resultadoAnterior.situacaoFiscal)
+      : consultarSituacaoFiscal(cnpj, db),
   ]);
 
   if (pgfn.status === 'fulfilled') resultado.pgfn = pgfn.value;
