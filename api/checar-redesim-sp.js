@@ -5,7 +5,7 @@
 // Cobertura: só SP. A Infosimples não tem produto equivalente para outros
 // estados (verificado em 2026-08) — processos de outras UFs continuam usando
 // o botão "Consultar no REDESIM" manual já existente no painel do processo.
-import { getFirebaseAdmin, FieldValue } from './_lib/firebase-admin.js';
+import { getFirebaseAdmin } from './_lib/firebase-admin.js';
 import { obterCertificadoInfosimples } from './_lib/certificado-infosimples.js';
 import { getEncrypt } from './_lib/aes-bridge-encrypt.js';
 
@@ -68,8 +68,9 @@ export default async function handler(req, res) {
   }
 
   let db;
+  let FieldValue;
   try {
-    ({ db } = getFirebaseAdmin());
+    ({ db, FieldValue } = await getFirebaseAdmin());
   } catch (e) {
     console.error('Falha ao inicializar Firebase Admin:', e.message);
     return res.status(500).json({ error: 'configuracao_firebase_invalida', detalhe: e.message });

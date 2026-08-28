@@ -95,7 +95,7 @@ export default async function handler(req, res) {
   let db;
   let auth;
   try {
-    ({ db, auth } = getFirebaseAdmin());
+    ({ db, auth } = await getFirebaseAdmin());
   } catch (e) {
     console.error('Falha ao inicializar Firebase Admin:', e.message);
     return res.status(500).json({ error: 'configuracao_firebase_invalida', detalhe: e.message });
