@@ -5,7 +5,10 @@
 // Cobertura: só SP. A Infosimples não tem produto equivalente para outros
 // estados (verificado em 2026-08) — processos de outras UFs continuam usando
 // o botão "Consultar no REDESIM" manual já existente no painel do processo.
-import { encrypt } from 'aes-bridge';
+// Vercel resolve o pacote como CommonJS em produção, e o Node não detecta
+// export nomeado nesse caso — precisa do default import + desestruturação.
+import aesBridge from 'aes-bridge';
+const { encrypt } = aesBridge;
 import admin from 'firebase-admin';
 import { obterCertificadoInfosimples } from './_lib/certificado-infosimples.js';
 

@@ -5,7 +5,10 @@
 // Disparado manualmente por processo (cada chamada é paga na Infosimples).
 // Requer INFOSIMPLES_TOKEN e INFOSIMPLES_ENCRYPTION_KEY nas env vars; o
 // certificado digital em si vem do Firestore (ver _lib/certificado-infosimples.js).
-import { encrypt } from 'aes-bridge';
+// Vercel resolve o pacote como CommonJS em produção, e o Node não detecta
+// export nomeado nesse caso — precisa do default import + desestruturação.
+import aesBridge from 'aes-bridge';
+const { encrypt } = aesBridge;
 import admin from 'firebase-admin';
 import { obterCertificadoInfosimples } from './_lib/certificado-infosimples.js';
 
