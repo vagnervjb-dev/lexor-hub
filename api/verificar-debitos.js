@@ -5,12 +5,9 @@
 // Disparado manualmente por processo (cada chamada é paga na Infosimples).
 // Requer INFOSIMPLES_TOKEN e INFOSIMPLES_ENCRYPTION_KEY nas env vars; o
 // certificado digital em si vem do Firestore (ver _lib/certificado-infosimples.js).
-// Vercel resolve o pacote como CommonJS em produção, e o Node não detecta
-// export nomeado nesse caso — precisa do default import + desestruturação.
-import aesBridge from 'aes-bridge';
-const { encrypt } = aesBridge;
 import admin from 'firebase-admin';
 import { obterCertificadoInfosimples } from './_lib/certificado-infosimples.js';
+import { getEncrypt } from './_lib/aes-bridge-encrypt.js';
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -70,6 +67,7 @@ async function consultarSimplesNacional(cnpj) {
 
 async function consultarSituacaoFiscal(cnpj) {
   const certificado = await obterCertificadoInfosimples(db);
+  const encrypt = await getEncrypt();
   const key = process.env.INFOSIMPLES_ENCRYPTION_KEY;
   const [pkcs12_cert, pkcs12_pass] = await Promise.all([
     encrypt(certificado.certificadoBase64, key).then(toBase64Url),

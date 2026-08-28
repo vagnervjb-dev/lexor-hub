@@ -5,12 +5,9 @@
 // Cobertura: só SP. A Infosimples não tem produto equivalente para outros
 // estados (verificado em 2026-08) — processos de outras UFs continuam usando
 // o botão "Consultar no REDESIM" manual já existente no painel do processo.
-// Vercel resolve o pacote como CommonJS em produção, e o Node não detecta
-// export nomeado nesse caso — precisa do default import + desestruturação.
-import aesBridge from 'aes-bridge';
-const { encrypt } = aesBridge;
 import admin from 'firebase-admin';
 import { obterCertificadoInfosimples } from './_lib/certificado-infosimples.js';
+import { getEncrypt } from './_lib/aes-bridge-encrypt.js';
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -30,6 +27,7 @@ function toBase64Url(b64) {
 }
 
 async function consultarProtocoloSP(numeroProtocolo, certificado) {
+  const encrypt = await getEncrypt();
   const key = process.env.INFOSIMPLES_ENCRYPTION_KEY;
   const [pkcs12_cert, pkcs12_pass] = await Promise.all([
     encrypt(certificado.certificadoBase64, key).then(toBase64Url),
