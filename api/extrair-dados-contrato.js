@@ -100,6 +100,14 @@ export default async function handler(req, res) {
   }
   if (contentBlocks.length === 0) return res.status(400).json({ error: 'nenhum_documento_legivel' });
 
+  const temCampoForo = variaveis.some((variavel) =>
+    /(^|_)(foro|comarca)(_|$)/i.test(variavel)
+  );
+  const camposInternosSede = temCampoForo
+    ? ['__cidade_sede', '__estado_sede', '__uf_sede']
+    : [];
+  const camposSolicitados = [...variaveis, ...camposInternosSede];
+
   contentBlocks.push({
     type: 'text',
     text:
@@ -107,9 +115,16 @@ export default async function handler(req, res) {
       `(ex: RG, CPF, comprovante de endereço, cartão CNPJ), usados para preencher um contrato social. ` +
       `Extraia com precisão os seguintes campos a partir do conteúdo dos documentos acima. ` +
       `Se um campo não aparecer em nenhum documento, retorne uma string vazia para ele — nunca invente um valor. ` +
+      (temCampoForo
+        ? `REGRA OBRIGATÓRIA DE FORO: identifique a cidade e o estado/UF do endereço da sede da empresa ` +
+          `no comprovante de endereço empresarial. O foro deve ser sempre essa cidade e esse estado, nunca ` +
+          `o endereço residencial de um sócio. Preencha __cidade_sede, __estado_sede e __uf_sede apenas com ` +
+          `os dados da sede. Se o modelo tiver um único campo de foro ou comarca, use o formato Cidade/UF. ` +
+          `Se houver campos separados de cidade, estado ou UF do foro, preencha cada parte separadamente. `
+        : '') +
       `Responda somente com um objeto JSON válido, sem markdown e sem explicações. ` +
       `O objeto deve conter exatamente todas as chaves listadas, e todos os valores devem ser strings. ` +
-      `Campos a extrair: ${variaveis.join(', ')}.`,
+      `Campos a extrair: ${camposSolicitados.join(', ')}.`,
   });
 
   let extraidos;
@@ -130,12 +145,34 @@ export default async function handler(req, res) {
   // O modo de JSON livre evita que a gramática rígida da Anthropic exceda o
   // limite com modelos grandes. Normalizamos a resposta aqui para garantir que
   // a tela receba somente as variáveis do modelo, todas como strings.
+  const texto = (valor) => {
+    if (typeof valor === 'string') return valor.trim();
+    if (typeof valor === 'number' || typeof valor === 'boolean') return String(valor);
+    return '';
+  };
+  const sede = {
+    cidade: texto(extraidos.__cidade_sede),
+    estado: texto(extraidos.__estado_sede),
+    uf: texto(extraidos.__uf_sede).toUpperCase(),
+  };
+
   const valores = Object.fromEntries(
     variaveis.map((variavel) => {
-      const valor = extraidos[variavel];
-      if (typeof valor === 'string') return [variavel, valor];
-      if (typeof valor === 'number' || typeof valor === 'boolean') return [variavel, String(valor)];
-      return [variavel, ''];
+      let valor = texto(extraidos[variavel]);
+      const nomeCampo = variavel.toLowerCase();
+      const campoForo = /(^|_)(foro|comarca)(_|$)/.test(nomeCampo);
+
+      // Reforço determinístico: mesmo que a IA devolva outro foro, quando o
+      // comprovante empresarial informa a sede, estes campos são derivados
+      // exclusivamente dela.
+      if (campoForo && (sede.cidade || sede.estado || sede.uf)) {
+        if (/(^|_)uf(_|$)/.test(nomeCampo)) valor = sede.uf || sede.estado;
+        else if (/(^|_)estado(_|$)/.test(nomeCampo)) valor = sede.estado || sede.uf;
+        else if (/(^|_)(cidade|municipio)(_|$)/.test(nomeCampo)) valor = sede.cidade;
+        else valor = [sede.cidade, sede.uf || sede.estado].filter(Boolean).join('/');
+      }
+
+      return [variavel, valor];
     })
   );
 
