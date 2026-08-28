@@ -54,7 +54,7 @@ async function consultarSimplesNacional(cnpj) {
   };
 }
 
-async function consultarSituacaoFiscal(cnpj) {
+async function consultarSituacaoFiscal(cnpj, db) {
   const certificado = await obterCertificadoInfosimples(db);
   const encrypt = await getEncrypt();
   const key = process.env.INFOSIMPLES_ENCRYPTION_KEY;
@@ -123,7 +123,7 @@ export default async function handler(req, res) {
   const [pgfn, simplesNacional, situacaoFiscal] = await Promise.allSettled([
     consultarPgfn(cnpj),
     consultarSimplesNacional(cnpj),
-    consultarSituacaoFiscal(cnpj),
+    consultarSituacaoFiscal(cnpj, db),
   ]);
 
   if (pgfn.status === 'fulfilled') resultado.pgfn = pgfn.value;
