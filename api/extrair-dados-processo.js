@@ -7,7 +7,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import { db, auth } from './_lib/firebase-admin.js';
+import { getFirebaseAdmin } from './_lib/firebase-admin.js';
 
 const anthropic = new Anthropic();
 
@@ -46,6 +46,16 @@ export default async function handler(req, res) {
   const authHeader = req.headers.authorization || '';
   const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!idToken) return res.status(401).json({ error: 'sem_token' });
+
+  let db;
+  let auth;
+  try {
+    ({ db, auth } = getFirebaseAdmin());
+  } catch (e) {
+    console.error('Falha ao inicializar Firebase Admin:', e.message);
+    return res.status(500).json({ error: 'configuracao_firebase_invalida', detalhe: e.message });
+  }
+
   try {
     await auth.verifyIdToken(idToken);
   } catch {

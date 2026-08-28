@@ -1,22 +1,39 @@
-// Inicialização compartilhada do Firebase Admin — usa os módulos modulares
-// (firebase-admin/app, /firestore, /auth) em vez do namespace monolítico
-// `import admin from 'firebase-admin'`. O import default do pacote monolítico
-// se mostrou instável no runtime da Vercel (admin.apps chegando undefined em
-// produção, mesmo funcionando local) — os submódulos evitam esse problema.
+// Inicialização compartilhada e preguiçosa do Firebase Admin.
+//
+// Não inicialize o SDK no carregamento do módulo: qualquer variável ausente ou
+// chave privada malformada derrubaria a função antes de o handler conseguir
+// responder. Isso aparece na Vercel apenas como FUNCTION_INVOCATION_FAILED e
+// torna o diagnóstico desnecessariamente difícil.
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-    }),
-  });
+let services;
+
+export function getFirebaseAdmin() {
+  if (services) return services;
+
+  const required = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
+  const missing = required.filter((key) => !process.env[key]?.trim());
+  if (missing.length) {
+    throw new Error(`Variáveis ausentes na Vercel: ${missing.join(', ')}`);
+  }
+
+  if (!getApps().length) {
+    initializeApp({
+      credential: cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      }),
+    });
+  }
+
+  services = {
+    db: getFirestore(),
+    auth: getAuth(),
+  };
+  return services;
 }
 
-export const db = getFirestore();
-export const auth = getAuth();
 export { FieldValue };

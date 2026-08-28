@@ -5,7 +5,7 @@
 // Disparado manualmente por processo (cada chamada é paga na Infosimples).
 // Requer INFOSIMPLES_TOKEN e INFOSIMPLES_ENCRYPTION_KEY nas env vars; o
 // certificado digital em si vem do Firestore (ver _lib/certificado-infosimples.js).
-import { db, auth } from './_lib/firebase-admin.js';
+import { getFirebaseAdmin } from './_lib/firebase-admin.js';
 import { obterCertificadoInfosimples } from './_lib/certificado-infosimples.js';
 import { getEncrypt } from './_lib/aes-bridge-encrypt.js';
 
@@ -91,6 +91,16 @@ export default async function handler(req, res) {
   const authHeader = req.headers.authorization || '';
   const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!idToken) return res.status(401).json({ error: 'sem_token' });
+
+  let db;
+  let auth;
+  try {
+    ({ db, auth } = getFirebaseAdmin());
+  } catch (e) {
+    console.error('Falha ao inicializar Firebase Admin:', e.message);
+    return res.status(500).json({ error: 'configuracao_firebase_invalida', detalhe: e.message });
+  }
+
   try {
     await auth.verifyIdToken(idToken);
   } catch {
