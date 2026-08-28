@@ -3,10 +3,11 @@
 // Simples Nacional (sem credencial extra) e Situação Fiscal (via procurador —
 // usa o mesmo certificado digital A1 já configurado pro REDESIM/SP).
 // Disparado manualmente por processo (cada chamada é paga na Infosimples).
-// Requer INFOSIMPLES_TOKEN, INFOSIMPLES_CERT_BASE64, INFOSIMPLES_CERT_SENHA,
-// INFOSIMPLES_ENCRYPTION_KEY (mesmas do checar-redesim-sp.js) nas env vars.
+// Requer INFOSIMPLES_TOKEN e INFOSIMPLES_ENCRYPTION_KEY nas env vars; o
+// certificado digital em si vem do Firestore (ver _lib/certificado-infosimples.js).
 import { encrypt } from 'aes-bridge';
 import admin from 'firebase-admin';
+import { obterCertificadoInfosimples } from './_lib/certificado-infosimples.js';
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -65,10 +66,11 @@ async function consultarSimplesNacional(cnpj) {
 }
 
 async function consultarSituacaoFiscal(cnpj) {
+  const certificado = await obterCertificadoInfosimples(db);
   const key = process.env.INFOSIMPLES_ENCRYPTION_KEY;
   const [pkcs12_cert, pkcs12_pass] = await Promise.all([
-    encrypt(process.env.INFOSIMPLES_CERT_BASE64, key).then(toBase64Url),
-    encrypt(process.env.INFOSIMPLES_CERT_SENHA, key).then(toBase64Url),
+    encrypt(certificado.certificadoBase64, key).then(toBase64Url),
+    encrypt(certificado.senha, key).then(toBase64Url),
   ]);
   const body = new URLSearchParams({
     token: process.env.INFOSIMPLES_TOKEN,

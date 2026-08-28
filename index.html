@@ -353,6 +353,7 @@ tbody tr:hover td{background:var(--bg3);}
     <button class="sb-item" onclick="nav('contabilidades',this)"><span class="si-icon">◉</span> Contabilidades</button>
     <button class="sb-item" onclick="nav('fluxos',this)"><span class="si-icon">⇌</span> Fluxos</button>
     <button class="sb-item" onclick="nav('modelos-contrato',this)"><span class="si-icon">📝</span> Modelos de Contrato</button>
+    <button class="sb-item" onclick="nav('configuracoes',this)"><span class="si-icon">🔐</span> Configurações</button>
     <button class="sb-item" onclick="nav('usuarios',this)"><span class="si-icon">👤</span> Usuários</button>
     <button class="sb-item" onclick="nav('relatorios',this)"><span class="si-icon">↗</span> Relatórios</button>
     <button class="sb-item" onclick="nav('faturamento',this)"><span class="si-icon">💰</span> Faturamento</button>
@@ -654,6 +655,30 @@ tbody tr:hover td{background:var(--bg3);}
           <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Preview</div>
           <pre id="avulso-preview" style="white-space:pre-wrap;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;font-family:'DM Sans',sans-serif;font-size:12px;max-height:320px;overflow-y:auto;"></pre>
         </div>
+      </div>
+    </div>
+
+    <!-- ═══ CONFIGURAÇÕES ═══ -->
+    <div class="page" id="page-configuracoes">
+      <div class="page-header">
+        <div><h2>Configurações</h2><p>Credenciais usadas pelas automações — nunca podem ser lidas de volta depois de salvas</p></div>
+      </div>
+      <div class="card">
+        <div class="card-title">🔐 Certificado digital A1 (Infosimples)</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6">
+          Usado como procurador nas consultas de Situação Fiscal e REDESIM/SP. Depois de enviado, o arquivo e a senha ficam gravados de um jeito que nem o admin consegue ler de volta pelo sistema — só as automações do servidor conseguem usar. Pra trocar, é só enviar um novo (substitui o anterior).
+        </div>
+        <div class="fg" style="margin-bottom:10px">
+          <label>Arquivo do certificado (.pfx ou .p12)</label>
+          <input type="file" id="config-cert-file" accept=".pfx,.p12"/>
+        </div>
+        <div class="fg" style="margin-bottom:10px">
+          <label>Senha do certificado</label>
+          <input type="password" id="config-cert-senha" placeholder="Senha do arquivo .pfx"/>
+        </div>
+        <button class="btn btn-accent btn-sm" onclick="salvarCertificadoInfosimples()">Salvar certificado</button>
+        <div id="config-cert-status" style="font-size:12px;color:var(--text3);margin-top:10px"></div>
+        <div id="config-cert-meta" style="font-size:11px;color:var(--text3);margin-top:6px"></div>
       </div>
     </div>
 
@@ -3568,6 +3593,61 @@ window.verificarDebitos = async function() {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CONFIGURAÇÕES — certificado digital A1 usado nas consultas da Infosimples.
+// Grava em configuracoes/infosimplesCertificado (regras do Firestore bloqueiam
+// leitura por qualquer cliente — só o backend, via Admin SDK, consegue ler) e
+// os metadados (nome do arquivo, data) num doc separado que é legível.
+// ═══════════════════════════════════════════════════════════════════════════
+function arrayBufferParaBase64(buffer) {
+  let binario = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.length; i++) binario += String.fromCharCode(bytes[i]);
+  return btoa(binario);
+}
+
+window.salvarCertificadoInfosimples = async function() {
+  const fileInput = document.getElementById('config-cert-file');
+  const senha = document.getElementById('config-cert-senha').value;
+  const statusEl = document.getElementById('config-cert-status');
+  const file = fileInput.files[0];
+  if (!file) { statusEl.textContent = 'Selecione o arquivo do certificado.'; return; }
+  if (!senha) { statusEl.textContent = 'Informe a senha do certificado.'; return; }
+
+  statusEl.textContent = '⏳ Enviando...';
+  try {
+    const buffer = await file.arrayBuffer();
+    const certificadoBase64 = arrayBufferParaBase64(buffer);
+    await setDoc(doc(db, 'configuracoes', 'infosimplesCertificado'), { certificadoBase64, senha });
+    await setDoc(doc(db, 'configuracoes', 'infosimplesCertificadoMeta'), {
+      nomeArquivo: file.name,
+      atualizadoEm: new Date().toISOString(),
+      atualizadoPor: window._user?.nome || window._user?.email || '—'
+    });
+    fileInput.value = '';
+    document.getElementById('config-cert-senha').value = '';
+    statusEl.textContent = '✓ Certificado salvo — não pode mais ser lido de volta pelo sistema, só usado pelas automações do servidor.';
+    carregarConfigCertMeta();
+    showSaveIndicator(true);
+  } catch(e) {
+    statusEl.textContent = '❌ Erro ao salvar: ' + e.message;
+  }
+};
+
+window.carregarConfigCertMeta = async function() {
+  const el = document.getElementById('config-cert-meta');
+  if (!el) return;
+  try {
+    const snap = await getDoc(doc(db, 'configuracoes', 'infosimplesCertificadoMeta'));
+    el.textContent = snap.exists()
+      ? `Último certificado enviado: "${snap.data().nomeArquivo}" em ${new Date(snap.data().atualizadoEm).toLocaleString('pt-BR')} por ${snap.data().atualizadoPor}`
+      : 'Nenhum certificado enviado ainda.';
+  } catch(e) {
+    el.textContent = 'Erro ao carregar: ' + e.message;
+  }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MODELOS DE CONTRATO — upload de .docx com variáveis {{...}}, extração via IA
 // a partir dos documentos do cliente e geração do contrato preenchido
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4412,6 +4492,7 @@ window.nav               = function(page, btn) {
   if (page === 'dashboard') carregarDashboard();
   if (page === 'modelos-contrato') carregarModelosContrato();
   if (page === 'gerar-contrato') carregarModelosContratoAvulso();
+  if (page === 'configuracoes') carregarConfigCertMeta();
 };
 window.switchRole        = switchRole;
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4828,7 +4909,7 @@ const pages = {
   documentos:'Documentos', chat:'Comunicação',
   'gerar-contrato':'Gerar Contrato',
   contabilidades:'Contabilidades', fluxos:'Fluxos',
-  'modelos-contrato':'Modelos de Contrato',
+  'modelos-contrato':'Modelos de Contrato', configuracoes:'Configurações',
   usuarios:'Usuários', relatorios:'Relatórios', faturamento:'Faturamento'
 };
 window.toggleSidebar = function() {

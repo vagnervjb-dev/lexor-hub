@@ -7,6 +7,7 @@
 // o botão "Consultar no REDESIM" manual já existente no painel do processo.
 import { encrypt } from 'aes-bridge';
 import admin from 'firebase-admin';
+import { obterCertificadoInfosimples } from './_lib/certificado-infosimples.js';
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -25,11 +26,11 @@ function toBase64Url(b64) {
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-async function consultarProtocoloSP(numeroProtocolo) {
+async function consultarProtocoloSP(numeroProtocolo, certificado) {
   const key = process.env.INFOSIMPLES_ENCRYPTION_KEY;
   const [pkcs12_cert, pkcs12_pass] = await Promise.all([
-    encrypt(process.env.INFOSIMPLES_CERT_BASE64, key).then(toBase64Url),
-    encrypt(process.env.INFOSIMPLES_CERT_SENHA, key).then(toBase64Url),
+    encrypt(certificado.certificadoBase64, key).then(toBase64Url),
+    encrypt(certificado.senha, key).then(toBase64Url),
   ]);
 
   const body = new URLSearchParams({
@@ -76,6 +77,13 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
+  let certificado;
+  try {
+    certificado = await obterCertificadoInfosimples(db);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
   const snap = await db.collection('processos').where('uf', '==', 'SP').get();
   const alvos = snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
@@ -84,7 +92,7 @@ export default async function handler(req, res) {
   const resultados = [];
   for (const p of alvos) {
     try {
-      const r = await consultarProtocoloSP(p.numeroProtocolo);
+      const r = await consultarProtocoloSP(p.numeroProtocolo, certificado);
       const agora = new Date().toISOString();
       const updates = {};
 
