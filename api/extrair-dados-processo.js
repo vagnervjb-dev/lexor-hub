@@ -5,7 +5,7 @@
 // Requer ANTHROPIC_API_KEY nas env vars (Vercel), além das já usadas pelo
 // firebase-admin (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).
 import { getFirebaseAdmin } from './_lib/firebase-admin.js';
-import { getAnthropicDependencies } from './_lib/anthropic.js';
+import { assertAnthropicConfigured, createStructuredMessage } from './_lib/anthropic.js';
 
 const MEDIA_TYPES_SUPORTADOS = {
   'application/pdf': 'application/pdf',
@@ -15,28 +15,50 @@ const MEDIA_TYPES_SUPORTADOS = {
   'image/webp': 'image/webp',
 };
 
-function criarDadosProcessoSchema(z) {
-  return z.object({
-    cnpj: z.string().nullable(),
-    naturezaJuridica: z.string().nullable(),
-    regimeTributario: z.string().nullable(),
-    capitalSocial: z.string().nullable(),
-    cnae: z.string().nullable(),
-    endereco: z.string().nullable(),
-    cidade: z.string().nullable(),
-    cep: z.string().nullable(),
-    whatsapp: z.string().nullable(),
-    emailCliente: z.string().nullable(),
-    socios: z.array(
-      z.object({
-        nome: z.string(),
-        cpf: z.string().nullable(),
-        administrador: z.boolean().nullable(),
-        participacao: z.string().nullable(),
-      })
-    ),
-  });
-}
+const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+const dadosProcessoSchema = {
+  type: 'object',
+  properties: {
+    cnpj: nullableString,
+    naturezaJuridica: nullableString,
+    regimeTributario: nullableString,
+    capitalSocial: nullableString,
+    cnae: nullableString,
+    endereco: nullableString,
+    cidade: nullableString,
+    cep: nullableString,
+    whatsapp: nullableString,
+    emailCliente: nullableString,
+    socios: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          nome: { type: 'string' },
+          cpf: nullableString,
+          administrador: { anyOf: [{ type: 'boolean' }, { type: 'null' }] },
+          participacao: nullableString,
+        },
+        required: ['nome', 'cpf', 'administrador', 'participacao'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: [
+    'cnpj',
+    'naturezaJuridica',
+    'regimeTributario',
+    'capitalSocial',
+    'cnae',
+    'endereco',
+    'cidade',
+    'cep',
+    'whatsapp',
+    'emailCliente',
+    'socios',
+  ],
+  additionalProperties: false,
+};
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
@@ -61,11 +83,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'token_invalido', detalhe: e.code || e.message });
   }
 
-  let anthropic;
-  let z;
-  let zodOutputFormat;
   try {
-    ({ anthropic, z, zodOutputFormat } = await getAnthropicDependencies());
+    assertAnthropicConfigured();
   } catch (e) {
     console.error('Falha ao inicializar Anthropic:', e.message);
     return res.status(500).json({ error: 'configuracao_ia_invalida', detalhe: e.message });
@@ -114,22 +133,20 @@ export default async function handler(req, res) {
       `nunca invente um valor. "participacao" é o percentual de participação societária, se constar.`,
   });
 
-  let response;
+  let valores;
   try {
-    response = await anthropic.messages.parse({
-      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
-      max_tokens: 4096,
+    valores = await createStructuredMessage({
       messages: [{ role: 'user', content: contentBlocks }],
-      output_config: { format: zodOutputFormat(criarDadosProcessoSchema(z)) },
+      schema: dadosProcessoSchema,
     });
   } catch (e) {
     console.error('Erro ao chamar Claude:', e.message);
     return res.status(502).json({ error: 'falha_ia', detalhe: e.message });
   }
 
-  if (!response.parsed_output) {
+  if (!valores || typeof valores !== 'object' || Array.isArray(valores)) {
     return res.status(502).json({ error: 'extracao_sem_resultado' });
   }
 
-  return res.status(200).json({ valores: response.parsed_output });
+  return res.status(200).json({ valores });
 }

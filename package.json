@@ -4,8 +4,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "firebase-admin": "13.10.0",
-    "@anthropic-ai/sdk": "^0.122.0",
-    "zod": "^4.4.3"
+    "firebase-admin": "13.10.0"
   }
 }

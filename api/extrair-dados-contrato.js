@@ -6,7 +6,7 @@
 // Requer ANTHROPIC_API_KEY nas env vars (Vercel), além das já usadas pelo
 // firebase-admin (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).
 import { getFirebaseAdmin } from './_lib/firebase-admin.js';
-import { getAnthropicDependencies } from './_lib/anthropic.js';
+import { assertAnthropicConfigured, createStructuredMessage } from './_lib/anthropic.js';
 
 const MEDIA_TYPES_SUPORTADOS = {
   'application/pdf': 'application/pdf',
@@ -46,11 +46,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'token_invalido', detalhe: e.code || e.message });
   }
 
-  let anthropic;
-  let z;
-  let zodOutputFormat;
   try {
-    ({ anthropic, z, zodOutputFormat } = await getAnthropicDependencies());
+    assertAnthropicConfigured();
   } catch (e) {
     console.error('Falha ao inicializar Anthropic:', e.message);
     return res.status(500).json({ error: 'configuracao_ia_invalida', detalhe: e.message });
@@ -113,24 +110,32 @@ export default async function handler(req, res) {
       `Campos a extrair: ${variaveis.join(', ')}.`,
   });
 
-  const schema = z.object(Object.fromEntries(variaveis.map((v) => [v, z.string().nullable()])));
+  const schema = {
+    type: 'object',
+    properties: Object.fromEntries(
+      variaveis.map((variavel) => [
+        variavel,
+        { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      ])
+    ),
+    required: variaveis,
+    additionalProperties: false,
+  };
 
-  let response;
+  let valores;
   try {
-    response = await anthropic.messages.parse({
-      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
-      max_tokens: 4096,
+    valores = await createStructuredMessage({
       messages: [{ role: 'user', content: contentBlocks }],
-      output_config: { format: zodOutputFormat(schema) },
+      schema,
     });
   } catch (e) {
     console.error('Erro ao chamar Claude:', e.message);
     return res.status(502).json({ error: 'falha_ia', detalhe: e.message });
   }
 
-  if (!response.parsed_output) {
+  if (!valores || typeof valores !== 'object' || Array.isArray(valores)) {
     return res.status(502).json({ error: 'extracao_sem_resultado' });
   }
 
-  return res.status(200).json({ valores: response.parsed_output });
+  return res.status(200).json({ valores });
 }
