@@ -106,7 +106,7 @@ export default async function handler(req, res) {
       `Estes são documentos de identificação/comprovação de um cliente de uma contabilidade ` +
       `(ex: RG, CPF, comprovante de endereço, cartão CNPJ), usados para preencher um contrato social. ` +
       `Extraia com precisão os seguintes campos a partir do conteúdo dos documentos acima. ` +
-      `Se um campo não aparecer em nenhum documento, retorne null para ele — nunca invente um valor. ` +
+      `Se um campo não aparecer em nenhum documento, retorne uma string vazia para ele — nunca invente um valor. ` +
       `Campos a extrair: ${variaveis.join(', ')}.`,
   });
 
@@ -115,7 +115,7 @@ export default async function handler(req, res) {
     properties: Object.fromEntries(
       variaveis.map((variavel) => [
         variavel,
-        { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        { type: 'string' },
       ])
     ),
     required: variaveis,
