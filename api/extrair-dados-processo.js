@@ -3,7 +3,7 @@
 // empresa e o quadro societário — pra pré-preencher o processo automaticamente,
 // em vez de digitar tudo à mão em "Coleta de dados".
 // Requer ANTHROPIC_API_KEY nas env vars (Vercel), além das já usadas pelo
-// firebase-admin (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).
+// firebase-admin (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).
 import { getFirebaseAdmin } from './_lib/firebase-admin.js';
 import { getAnthropicDependencies } from './_lib/anthropic.js';
 

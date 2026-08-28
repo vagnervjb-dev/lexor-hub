@@ -4,7 +4,7 @@
 // subcoleção de documentos de um processo já salvo; { documentos: [{url,tipo}] }
 // é o modo avulso, usado sem processo vinculado (upload temporário no Storage).
 // Requer ANTHROPIC_API_KEY nas env vars (Vercel), além das já usadas pelo
-// firebase-admin (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).
+// firebase-admin (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).
 import { getFirebaseAdmin } from './_lib/firebase-admin.js';
 import { getAnthropicDependencies } from './_lib/anthropic.js';
 

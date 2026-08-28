@@ -30,20 +30,26 @@ export function getFirebaseAdmin() {
 }
 
 async function initializeFirebaseAdmin() {
-  const required = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
+  const required = ['FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
   const missing = required.filter((key) => !process.env[key]?.trim());
   if (missing.length) {
     throw new Error(`Variáveis ausentes na Vercel: ${missing.join(', ')}`);
   }
 
-  const projectId = cleanEnvValue(process.env.FIREBASE_PROJECT_ID);
-  const clientEmail = cleanEnvValue(process.env.FIREBASE_CLIENT_EMAIL);
-  const privateKey = cleanEnvValue(process.env.FIREBASE_PRIVATE_KEY).replace(/\\n/g, '\n');
-  if (projectId !== EXPECTED_PROJECT_ID) {
-    throw new Error(
-      `FIREBASE_PROJECT_ID aponta para "${projectId}"; esperado "${EXPECTED_PROJECT_ID}".`
+  // O projectId não é segredo e já faz parte da configuração pública do
+  // frontend. Mantê-lo também como env var permitiu que um hash fosse colado
+  // por engano na Vercel, fazendo todo token legítimo falhar por audience.
+  const configuredProjectId = process.env.FIREBASE_PROJECT_ID
+    ? cleanEnvValue(process.env.FIREBASE_PROJECT_ID)
+    : null;
+  if (configuredProjectId && configuredProjectId !== EXPECTED_PROJECT_ID) {
+    console.warn(
+      `FIREBASE_PROJECT_ID ignorado: recebido "${configuredProjectId}", usando "${EXPECTED_PROJECT_ID}".`
     );
   }
+  const projectId = EXPECTED_PROJECT_ID;
+  const clientEmail = cleanEnvValue(process.env.FIREBASE_CLIENT_EMAIL);
+  const privateKey = cleanEnvValue(process.env.FIREBASE_PRIVATE_KEY).replace(/\\n/g, '\n');
 
   const [{ initializeApp, cert, getApps }, { getFirestore, FieldValue }, { getAuth }] =
     await Promise.all([
