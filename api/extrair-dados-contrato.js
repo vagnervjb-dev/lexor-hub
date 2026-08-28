@@ -5,12 +5,8 @@
 // é o modo avulso, usado sem processo vinculado (upload temporário no Storage).
 // Requer ANTHROPIC_API_KEY nas env vars (Vercel), além das já usadas pelo
 // firebase-admin (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).
-import Anthropic from '@anthropic-ai/sdk';
-import { z } from 'zod';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { getFirebaseAdmin } from './_lib/firebase-admin.js';
-
-const anthropic = new Anthropic();
+import { getAnthropicDependencies } from './_lib/anthropic.js';
 
 const MEDIA_TYPES_SUPORTADOS = {
   'application/pdf': 'application/pdf',
@@ -47,6 +43,16 @@ export default async function handler(req, res) {
     await auth.verifyIdToken(idToken);
   } catch {
     return res.status(401).json({ error: 'token_invalido' });
+  }
+
+  let anthropic;
+  let z;
+  let zodOutputFormat;
+  try {
+    ({ anthropic, z, zodOutputFormat } = await getAnthropicDependencies());
+  } catch (e) {
+    console.error('Falha ao inicializar Anthropic:', e.message);
+    return res.status(500).json({ error: 'configuracao_ia_invalida', detalhe: e.message });
   }
 
   const { processoId, modeloId, documentoIds, documentos: documentosAvulso } = req.body || {};

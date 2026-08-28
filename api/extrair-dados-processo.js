@@ -4,12 +4,8 @@
 // em vez de digitar tudo à mão em "Coleta de dados".
 // Requer ANTHROPIC_API_KEY nas env vars (Vercel), além das já usadas pelo
 // firebase-admin (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).
-import Anthropic from '@anthropic-ai/sdk';
-import { z } from 'zod';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { getFirebaseAdmin } from './_lib/firebase-admin.js';
-
-const anthropic = new Anthropic();
+import { getAnthropicDependencies } from './_lib/anthropic.js';
 
 const MEDIA_TYPES_SUPORTADOS = {
   'application/pdf': 'application/pdf',
@@ -19,26 +15,28 @@ const MEDIA_TYPES_SUPORTADOS = {
   'image/webp': 'image/webp',
 };
 
-const dadosProcessoSchema = z.object({
-  cnpj: z.string().nullable(),
-  naturezaJuridica: z.string().nullable(),
-  regimeTributario: z.string().nullable(),
-  capitalSocial: z.string().nullable(),
-  cnae: z.string().nullable(),
-  endereco: z.string().nullable(),
-  cidade: z.string().nullable(),
-  cep: z.string().nullable(),
-  whatsapp: z.string().nullable(),
-  emailCliente: z.string().nullable(),
-  socios: z.array(
-    z.object({
-      nome: z.string(),
-      cpf: z.string().nullable(),
-      administrador: z.boolean().nullable(),
-      participacao: z.string().nullable(),
-    })
-  ),
-});
+function criarDadosProcessoSchema(z) {
+  return z.object({
+    cnpj: z.string().nullable(),
+    naturezaJuridica: z.string().nullable(),
+    regimeTributario: z.string().nullable(),
+    capitalSocial: z.string().nullable(),
+    cnae: z.string().nullable(),
+    endereco: z.string().nullable(),
+    cidade: z.string().nullable(),
+    cep: z.string().nullable(),
+    whatsapp: z.string().nullable(),
+    emailCliente: z.string().nullable(),
+    socios: z.array(
+      z.object({
+        nome: z.string(),
+        cpf: z.string().nullable(),
+        administrador: z.boolean().nullable(),
+        participacao: z.string().nullable(),
+      })
+    ),
+  });
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
@@ -60,6 +58,16 @@ export default async function handler(req, res) {
     await auth.verifyIdToken(idToken);
   } catch {
     return res.status(401).json({ error: 'token_invalido' });
+  }
+
+  let anthropic;
+  let z;
+  let zodOutputFormat;
+  try {
+    ({ anthropic, z, zodOutputFormat } = await getAnthropicDependencies());
+  } catch (e) {
+    console.error('Falha ao inicializar Anthropic:', e.message);
+    return res.status(500).json({ error: 'configuracao_ia_invalida', detalhe: e.message });
   }
 
   const { processoId, documentoIds } = req.body || {};
@@ -111,7 +119,7 @@ export default async function handler(req, res) {
       model: 'claude-opus-5',
       max_tokens: 4096,
       messages: [{ role: 'user', content: contentBlocks }],
-      output_config: { format: zodOutputFormat(dadosProcessoSchema) },
+      output_config: { format: zodOutputFormat(criarDadosProcessoSchema(z)) },
     });
   } catch (e) {
     console.error('Erro ao chamar Claude:', e.message);
