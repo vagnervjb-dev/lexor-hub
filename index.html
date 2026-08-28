@@ -218,6 +218,21 @@ tbody tr:hover td{background:var(--bg3);}
 .modal-close{background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;padding:2px 6px;border-radius:4px;}
 .modal-close:hover{background:var(--bg4);color:var(--text);}
 
+/* PREVIEW DO WORD */
+.word-preview-overlay{z-index:500;background:rgba(10,10,10,0.76);backdrop-filter:blur(5px);}
+.word-preview-modal{width:min(1180px,96vw);height:94vh;max-width:none;max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column;border-radius:12px;background:#F3F1EC;}
+.word-preview-header{height:58px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 18px;background:#FFFFFF;border-bottom:1px solid var(--border2);}
+.word-preview-icon{width:32px;height:32px;border-radius:6px;background:#185ABD;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;}
+.word-preview-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:600;color:var(--text);}
+.word-preview-subtitle{font-size:10.5px;color:var(--text3);margin-top:2px;}
+.word-preview-body{position:relative;flex:1;min-height:0;overflow:auto;background:#66645F;padding:30px 24px;}
+.word-preview-document{min-width:max-content;min-height:100%;}
+.word-preview-document .docx-wrapper{background:transparent !important;padding:0 !important;}
+.word-preview-document section.docx{margin:0 auto 24px !important;box-shadow:0 8px 28px rgba(0,0,0,.32);}
+.word-preview-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;background:#66645F;z-index:2;}
+.word-preview-footer{min-height:62px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:10px 18px;background:#FFFFFF;border-top:1px solid var(--border2);}
+.word-preview-info{font-size:11px;color:var(--text3);margin-right:auto;}
+
 /* CHECKLIST */
 .checklist{display:flex;flex-direction:column;gap:6px;}
 .check-item{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:var(--r-sm);border:1px solid var(--border);cursor:pointer;transition:all .15s;}
@@ -293,6 +308,10 @@ tbody tr:hover td{background:var(--bg3);}
   .responsive-grid-sidebar > div:first-child{ max-height:220px; overflow-y:auto; }
 
   .modal{ width:94vw !important; padding:16px; }
+  .word-preview-modal{width:100vw !important;height:100vh;max-height:none;border-radius:0;padding:0;}
+  .word-preview-body{padding:16px 8px;}
+  .word-preview-footer{flex-wrap:wrap;}
+  .word-preview-info{width:100%;}
   .kol{ min-width:82vw; }
 
   .conta-card{ flex-direction:column; align-items:flex-start !important; gap:10px; }
@@ -307,6 +326,8 @@ tbody tr:hover td{background:var(--bg3);}
 <!-- Geração de contrato preenchido (.docx) a partir de modelo com variáveis {{...}} -->
 <script src="https://cdn.jsdelivr.net/npm/pizzip@3.1.8/dist/pizzip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.69.3/build/docxtemplater.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx-preview@0.4.0/dist/docx-preview.min.js"></script>
 </head>
 <body>
 
@@ -650,10 +671,9 @@ tbody tr:hover td{background:var(--bg3);}
             <div id="avulso-campos-preenchidos-lista" class="form-grid hidden" style="margin-top:8px"></div>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:14px">
-            <button class="btn btn-accent btn-sm" onclick="gerarContratoAvulso()">📄 Gerar contrato (.docx)</button>
+            <button class="btn btn-accent btn-sm" onclick="abrirPreviewContratoWord('avulso')">👁 Visualizar contrato</button>
+            <button class="btn btn-ghost btn-sm" onclick="gerarContratoAvulso()">⬇ Baixar .docx</button>
           </div>
-          <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Preview</div>
-          <pre id="avulso-preview" style="white-space:pre-wrap;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;font-family:'DM Sans',sans-serif;font-size:12px;max-height:320px;overflow-y:auto;"></pre>
         </div>
       </div>
     </div>
@@ -1017,10 +1037,9 @@ tbody tr:hover td{background:var(--bg3);}
           <div id="contrato-campos-preenchidos-lista" class="form-grid hidden" style="margin-top:8px"></div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:14px">
-          <button class="btn btn-accent btn-sm" onclick="gerarContrato()">📄 Gerar contrato (.docx)</button>
+          <button class="btn btn-accent btn-sm" onclick="abrirPreviewContratoWord('contrato')">👁 Visualizar contrato</button>
+          <button class="btn btn-ghost btn-sm" onclick="gerarContrato()">⬇ Baixar .docx</button>
         </div>
-        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Preview</div>
-        <pre id="contrato-preview" style="white-space:pre-wrap;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;font-family:'DM Sans',sans-serif;font-size:12px;max-height:320px;overflow-y:auto;"></pre>
       </div>
     </div>
     <div id="ptab-chat2" class="hidden">
@@ -1442,6 +1461,29 @@ tbody tr:hover td{background:var(--bg3);}
     <div class="form-actions">
       <button class="btn btn-accent" onclick="alert('Fluxo criado! Agora adicione as etapas. (protótipo)');closeModal('modal-novo-fluxo')">Criar fluxo</button>
       <button class="btn btn-ghost" onclick="closeModal('modal-novo-fluxo')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PREVIEW DO CONTRATO — renderiza o .docx preenchido como páginas do Word -->
+<div class="modal-overlay word-preview-overlay" id="modal-preview-contrato" aria-hidden="true">
+  <div class="modal word-preview-modal" role="dialog" aria-modal="true" aria-labelledby="word-preview-titulo">
+    <div class="word-preview-header">
+      <div class="word-preview-icon">W</div>
+      <div>
+        <div class="word-preview-title" id="word-preview-titulo">Pré-visualização do contrato</div>
+        <div class="word-preview-subtitle" id="word-preview-subtitulo">Documento preenchido a partir do modelo selecionado</div>
+      </div>
+      <button class="modal-close" style="margin-left:auto" onclick="fecharPreviewContrato()" aria-label="Fechar pré-visualização">✕</button>
+    </div>
+    <div class="word-preview-body">
+      <div class="word-preview-loading" id="word-preview-loading">⏳ Preparando as páginas do contrato...</div>
+      <div class="word-preview-document" id="word-preview-document"></div>
+    </div>
+    <div class="word-preview-footer">
+      <div class="word-preview-info" id="word-preview-info">Confira o conteúdo antes de baixar o arquivo final.</div>
+      <button class="btn btn-ghost" onclick="fecharPreviewContrato()">Fechar</button>
+      <button class="btn btn-accent" id="btn-baixar-preview" onclick="baixarContratoPreview()" disabled>⬇ Baixar Word (.docx)</button>
     </div>
   </div>
 </div>
@@ -3889,12 +3931,120 @@ window.atualizarPreviewContrato = function() {
 // Compartilhado entre a geração dentro de um processo e a geração avulsa.
 async function gerarBlobContrato(modelo, dados) {
   const resp = await fetch(modelo.url);
+  if (!resp.ok) throw new Error('Não foi possível carregar o modelo de contrato.');
   const arrayBuffer = await resp.arrayBuffer();
   const zip = new PizZip(arrayBuffer);
   const docx = new window.docxtemplater(zip, { delimiters: { start: '{{', end: '}}' }, paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
   docx.render(dados);
   return docx.getZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
 }
+
+// Gera o mesmo .docx que será baixado e o renderiza dentro de uma janela sobre
+// o Lexor. Assim a prévia preserva páginas, margens, fontes, tabelas, cabeçalhos
+// e demais estilos do modelo do Word, em vez de mostrar apenas texto corrido.
+window._contratoPreviewAtual = null;
+
+window.abrirPreviewContratoWord = async function(prefixo) {
+  const avulso = prefixo === 'avulso';
+  const modelo = avulso ? window._avulsoModeloSelecionado : window._contratoModeloSelecionado;
+  if (!modelo) return;
+
+  const seletor = avulso ? '.avulso-campo-input' : '.contrato-campo-input';
+  const dados = lerCamposEditaveis(seletor);
+  const p = window._processoAberto;
+  const identificador = avulso
+    ? (dados.nome_empresarial || dados.nome_socio || dados.empresa || 'avulso')
+    : (p?.empresa || dados.nome_empresarial || 'processo');
+  const nomeArquivo = `Contrato - ${identificador}.docx`;
+
+  const modal = document.getElementById('modal-preview-contrato');
+  const container = document.getElementById('word-preview-document');
+  const loading = document.getElementById('word-preview-loading');
+  const info = document.getElementById('word-preview-info');
+  const btnBaixar = document.getElementById('btn-baixar-preview');
+
+  window._contratoPreviewAtual = null;
+  container.innerHTML = '';
+  loading.style.display = 'flex';
+  loading.textContent = '⏳ Preparando as páginas do contrato...';
+  info.textContent = 'Confira o conteúdo antes de baixar o arquivo final.';
+  btnBaixar.disabled = true;
+  document.getElementById('word-preview-titulo').textContent = modelo.nome || 'Pré-visualização do contrato';
+  document.getElementById('word-preview-subtitulo').textContent = nomeArquivo;
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+
+  try {
+    if (!window.docx?.renderAsync) throw new Error('O visualizador do Word não foi carregado. Atualize a página e tente novamente.');
+    const blob = await gerarBlobContrato(modelo, dados);
+    await window.docx.renderAsync(blob, container, null, {
+      className: 'docx',
+      inWrapper: true,
+      breakPages: true,
+      ignoreWidth: false,
+      ignoreHeight: false,
+      ignoreFonts: false,
+      renderHeaders: true,
+      renderFooters: true,
+      renderFootnotes: true,
+      useBase64URL: true,
+    });
+
+    const paginas = container.querySelectorAll('section.docx').length;
+    window._contratoPreviewAtual = { blob, nomeArquivo, prefixo, modelo };
+    loading.style.display = 'none';
+    info.textContent = paginas > 0
+      ? `${paginas} página(s) renderizada(s) a partir do arquivo Word preenchido.`
+      : 'Contrato renderizado a partir do arquivo Word preenchido.';
+    btnBaixar.disabled = false;
+  } catch(e) {
+    console.error('Erro no preview do contrato:', e);
+    loading.textContent = '❌ Não foi possível abrir a prévia: ' + e.message;
+    info.textContent = 'Você ainda pode fechar a janela, revisar os campos e tentar novamente.';
+  }
+};
+
+window.fecharPreviewContrato = function() {
+  const modal = document.getElementById('modal-preview-contrato');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  document.getElementById('word-preview-document').innerHTML = '';
+  window._contratoPreviewAtual = null;
+};
+
+async function registrarHistoricoContratoGerado(modelo, p) {
+  if (!p?.id) return;
+  const historico = p.historico || [];
+  historico.push({
+    tipo: 'contrato_gerado',
+    etapa: p.etapa || '—',
+    obs: `Contrato gerado a partir do modelo "${modelo.nome}"`,
+    resp: window._user?.nome || window._user?.email || '—',
+    data: new Date().toISOString()
+  });
+  await updateDoc(doc(db, 'processos', p.id), { historico });
+  window._processoAberto = { ...p, historico };
+  showSaveIndicator(true);
+}
+
+window.baixarContratoPreview = async function() {
+  const preview = window._contratoPreviewAtual;
+  if (!preview) return;
+  baixarBlob(preview.blob, preview.nomeArquivo);
+  if (preview.prefixo === 'contrato') {
+    try {
+      await registrarHistoricoContratoGerado(preview.modelo, window._processoAberto);
+    } catch(e) {
+      console.warn('Contrato baixado, mas o histórico não pôde ser atualizado:', e.message);
+    }
+  }
+};
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && document.getElementById('modal-preview-contrato')?.classList.contains('open')) {
+    window.fecharPreviewContrato();
+  }
+});
 
 function baixarBlob(blob, nomeArquivo) {
   const blobUrl = URL.createObjectURL(blob);
@@ -3947,20 +4097,7 @@ window.gerarContrato = async function() {
     const dados = lerCamposEditaveis('.contrato-campo-input');
     const blob = await gerarBlobContrato(modelo, dados);
     baixarBlob(blob, `Contrato - ${p?.empresa || 'processo'}.docx`);
-
-    if (p?.id) {
-      const historico = p.historico || [];
-      historico.push({
-        tipo: 'contrato_gerado',
-        etapa: p.etapa || '—',
-        obs: `Contrato gerado a partir do modelo "${modelo.nome}"`,
-        resp: window._user?.nome || window._user?.email || '—',
-        data: new Date().toISOString()
-      });
-      await updateDoc(doc(db, 'processos', p.id), { historico });
-      window._processoAberto = { ...p, historico };
-      showSaveIndicator(true);
-    }
+    await registrarHistoricoContratoGerado(modelo, p);
   } catch(e) {
     alert('Erro ao gerar contrato: ' + e.message);
   }
@@ -4988,7 +5125,11 @@ function switchRole() {
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('.modal-overlay').forEach(m => {
-  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+  m.addEventListener('click', e => {
+    if (e.target !== m) return;
+    if (m.id === 'modal-preview-contrato') window.fecharPreviewContrato();
+    else m.classList.remove('open');
+  });
 });
 
 // PROCESSO DETAIL
