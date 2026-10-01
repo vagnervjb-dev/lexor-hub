@@ -22,7 +22,11 @@
 //                            Receita libera o CNPJ na etapa "Junta
 //                            Comercial", bem antes do processo fechar —
 //                            esperar o "Concluído" formal atrasa a
-//                            importação sem necessidade). Requer
+//                            importação sem necessidade). Se o processo
+//                            não tem o número do CNPJ digitado no campo,
+//                            lê o Cartão CNPJ anexado com IA (Claude
+//                            visão, requer ANTHROPIC_API_KEY) e grava o
+//                            número de volta no processo. Requer
 //                            ?contabilidadeId=. Aceita ?consumidor=ordinatio
 //                            (padrão: sistema-contabil).
 //   marcar-importado (POST) — marca um processo como já importado POR ESSE
@@ -31,6 +35,7 @@
 //                            um não esconde o processo do outro). Aceita
 //                            {processoId, consumidor}.
 import { getFirebaseAdmin } from './_lib/firebase-admin.js';
+import { createStructuredMessage } from './_lib/anthropic.js';
 
 // Cada consumidor grava sua própria marca de "já importei" — importar num
 // sistema não pode esconder o processo do outro.
@@ -70,9 +75,65 @@ function normalizar(txt) {
     .toLowerCase();
 }
 
-async function temCartaoCnpjAnexado(db, processoId) {
-  const snap = await db.collection('processos').doc(processoId).collection('documentos').get();
-  return snap.docs.some((d) => normalizar(d.data().nome).includes('cnpj'));
+function documentoCartaoCnpj(docs) {
+  return docs.find((d) => normalizar(d.nome).includes('cnpj')) || null;
+}
+
+const MEDIA_TYPES_SUPORTADOS = {
+  'application/pdf': 'application/pdf',
+  'image/jpeg': 'image/jpeg',
+  'image/jpg': 'image/jpeg',
+  'image/png': 'image/png',
+  'image/webp': 'image/webp',
+};
+
+const cnpjSchema = {
+  type: 'object',
+  properties: { cnpj: { anyOf: [{ type: 'string' }, { type: 'null' }] } },
+  required: ['cnpj'],
+  additionalProperties: false,
+};
+
+// Lê o Cartão CNPJ anexado (documento oficial da Receita Federal) com
+// Claude (visão) e extrai só o número — mesmo mecanismo já usado em
+// extrair-dados-processo.js, mas sem exigir login/idToken (quem chama
+// aqui é outro backend, via x-api-key) e focado num único campo. Se não
+// der pra ler (sem ANTHROPIC_API_KEY, formato não suportado, falha da
+// IA), devolve null e quem chamou segue mostrando "CNPJ ausente".
+async function extrairCnpjDoDocumento(documento) {
+  const mediaType = MEDIA_TYPES_SUPORTADOS[documento.tipo];
+  if (!mediaType) return null;
+  try {
+    const resp = await fetch(documento.url);
+    if (!resp.ok) return null;
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    const data = buffer.toString('base64');
+    const bloco = mediaType === 'application/pdf'
+      ? { type: 'document', source: { type: 'base64', media_type: mediaType, data } }
+      : { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
+
+    const valores = await createStructuredMessage({
+      messages: [{
+        role: 'user',
+        content: [
+          bloco,
+          {
+            type: 'text',
+            text: 'Este é o Cartão CNPJ (Comprovante de Inscrição e de Situação Cadastral) de uma empresa. '
+              + 'Extraia só o número do CNPJ, no formato XX.XXX.XXX/XXXX-XX. Se não conseguir identificar '
+              + 'com certeza, retorne null — nunca invente.',
+          },
+        ],
+      }],
+      schema: cnpjSchema,
+    });
+
+    const cnpj = String(valores?.cnpj || '').replace(/\D/g, '');
+    return cnpj.length === 14 ? cnpj : null;
+  } catch (e) {
+    console.warn(`Falha ao extrair CNPJ do documento ${documento.nome}:`, e.message);
+    return null;
+  }
 }
 
 async function listarProcessosComCnpjAtivo(db, contabilidadeId, campoImportado) {
@@ -84,9 +145,9 @@ async function listarProcessosComCnpjAtivo(db, contabilidadeId, campoImportado) 
   // Não exige mais p.cnpj preenchido pra aparecer na lista: o campo do
   // processo às vezes fica vazio mesmo com o Cartão CNPJ já anexado (quem
   // está de olho no documento nem sempre digita o número de volta no
-  // processo). O consumidor (Ordinatio/Sistema Contábil) ainda precisa do
-  // número pra importar de fato — sem ele, mostra o processo como alerta
-  // "pronto, falta o CNPJ no processo" em vez de simplesmente escondê-lo.
+  // processo). Quando falta, tenta ler o número direto do PDF/imagem
+  // anexado via IA — e grava de volta no processo pra não precisar ler de
+  // novo a cada consulta.
   const candidatos = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((p) => !p[campoImportado]);
@@ -94,13 +155,32 @@ async function listarProcessosComCnpjAtivo(db, contabilidadeId, campoImportado) 
   const resultado = [];
   for (const p of candidatos) {
     const concluido = p.etapa === 'Concluído';
-    const cartaoCnpj = concluido ? true : await temCartaoCnpjAnexado(db, p.id);
+    let cnpj = p.cnpj || '';
+    let documentosDoProcesso = null;
+
+    if (!concluido || !cnpj) {
+      const docsSnap = await db.collection('processos').doc(p.id).collection('documentos').get();
+      documentosDoProcesso = docsSnap.docs.map((d) => d.data());
+    }
+
+    const cartaoCnpj = concluido ? true : !!documentoCartaoCnpj(documentosDoProcesso || []);
     if (!concluido && !cartaoCnpj) continue;
+
+    if (!cnpj && documentosDoProcesso) {
+      const documento = documentoCartaoCnpj(documentosDoProcesso);
+      if (documento) {
+        const extraido = await extrairCnpjDoDocumento(documento);
+        if (extraido) {
+          cnpj = extraido;
+          await db.collection('processos').doc(p.id).update({ cnpj: extraido });
+        }
+      }
+    }
 
     resultado.push({
       id: p.id,
       empresa: p.empresa || '',
-      cnpj: p.cnpj || '',
+      cnpj,
       naturezaJuridica: p.naturezaJuridica || '',
       regimeTributario: p.regimeTributario || '',
       capitalSocial: p.capitalSocial || '',
