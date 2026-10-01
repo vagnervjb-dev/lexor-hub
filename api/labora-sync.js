@@ -81,12 +81,15 @@ async function listarProcessosComCnpjAtivo(db, contabilidadeId, campoImportado) 
     .where('fluxoKey', '==', 'abertura')
     .get();
 
+  // Não exige mais p.cnpj preenchido pra aparecer na lista: o campo do
+  // processo às vezes fica vazio mesmo com o Cartão CNPJ já anexado (quem
+  // está de olho no documento nem sempre digita o número de volta no
+  // processo). O consumidor (Ordinatio/Sistema Contábil) ainda precisa do
+  // número pra importar de fato — sem ele, mostra o processo como alerta
+  // "pronto, falta o CNPJ no processo" em vez de simplesmente escondê-lo.
   const candidatos = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
-    // Sem CNPJ preenchido no processo não dá pra importar de jeito nenhum
-    // (é a chave de dedupe nos dois sistemas) — descarta antes de gastar
-    // uma leitura extra checando documentos.
-    .filter((p) => !p[campoImportado] && p.cnpj);
+    .filter((p) => !p[campoImportado]);
 
   const resultado = [];
   for (const p of candidatos) {
