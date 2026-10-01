@@ -14,11 +14,17 @@
 //   contabilidades          — lista Usuarios com role=contabilidade (pro
 //                            consumidor deixar o usuário escolher qual é
 //                            a LABORA, sem precisar decorar um id).
-//   processos              — processos de abertura de empresa já
-//                            concluídos (CNPJ ativo) de uma contabilidade,
-//                            ainda não importados POR ESSE CONSUMIDOR.
-//                            Requer ?contabilidadeId=. Aceita
-//                            ?consumidor=ordinatio (padrão: sistema-contabil).
+//   processos              — processos de abertura de empresa de uma
+//                            contabilidade, ainda não importados POR ESSE
+//                            CONSUMIDOR, que já têm CNPJ ativo: etapa
+//                            "Concluído" OU, antes disso, já com o Cartão
+//                            CNPJ anexado nos documentos do processo (a
+//                            Receita libera o CNPJ na etapa "Junta
+//                            Comercial", bem antes do processo fechar —
+//                            esperar o "Concluído" formal atrasa a
+//                            importação sem necessidade). Requer
+//                            ?contabilidadeId=. Aceita ?consumidor=ordinatio
+//                            (padrão: sistema-contabil).
 //   marcar-importado (POST) — marca um processo como já importado POR ESSE
 //                            CONSUMIDOR (campo próprio — Sistema Contábil
 //                            e Ordinatio importam de forma independente,
@@ -52,17 +58,44 @@ async function listarContabilidades(db) {
     .map((u) => ({ id: u.id, nome: u.nome || u.email || u.id }));
 }
 
-async function listarProcessosConcluidos(db, contabilidadeId, campoImportado) {
+// Normaliza (sem acento, minúsculo) pra comparar nome de arquivo livre —
+// quem anexa digita o nome manualmente, então aceita "Cartão CNPJ.pdf",
+// "cartao_cnpj_empresa.png", "CNPJ cartao.jpg" etc., não só um formato exato.
+function normalizar(txt) {
+  return String(txt || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
+async function temCartaoCnpjAnexado(db, processoId) {
+  const snap = await db.collection('processos').doc(processoId).collection('documentos').get();
+  return snap.docs.some((d) => {
+    const nome = normalizar(d.data().nome);
+    return nome.includes('cartao') && nome.includes('cnpj');
+  });
+}
+
+async function listarProcessosComCnpjAtivo(db, contabilidadeId, campoImportado) {
   const snap = await db.collection('processos')
     .where('contabilidadeId', '==', contabilidadeId)
     .where('fluxoKey', '==', 'abertura')
-    .where('etapa', '==', 'Concluído')
     .get();
 
-  return snap.docs
+  const candidatos = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
-    .filter((p) => !p[campoImportado])
-    .map((p) => ({
+    // Sem CNPJ preenchido no processo não dá pra importar de jeito nenhum
+    // (é a chave de dedupe nos dois sistemas) — descarta antes de gastar
+    // uma leitura extra checando documentos.
+    .filter((p) => !p[campoImportado] && p.cnpj);
+
+  const resultado = [];
+  for (const p of candidatos) {
+    const concluido = p.etapa === 'Concluído';
+    const cartaoCnpj = concluido ? true : await temCartaoCnpjAnexado(db, p.id);
+    if (!concluido && !cartaoCnpj) continue;
+
+    resultado.push({
       id: p.id,
       empresa: p.empresa || '',
       cnpj: p.cnpj || '',
@@ -77,7 +110,11 @@ async function listarProcessosConcluidos(db, contabilidadeId, campoImportado) {
       cep: p.cep || '',
       socios: p.socios || [],
       criadoEm: p.criadoEm || '',
-    }));
+      etapa: p.etapa || '',
+      concluido,
+    });
+  }
+  return resultado;
 }
 
 export default async function handler(req, res) {
@@ -102,7 +139,7 @@ export default async function handler(req, res) {
     const contabilidadeId = req.query?.contabilidadeId;
     if (!contabilidadeId) return res.status(400).json({ error: 'contabilidadeId_obrigatorio' });
     const campoImportado = CAMPO_IMPORTADO[consumidorDe(req)];
-    const processos = await listarProcessosConcluidos(db, contabilidadeId, campoImportado);
+    const processos = await listarProcessosComCnpjAtivo(db, contabilidadeId, campoImportado);
     return res.status(200).json({ processos });
   }
 
