@@ -59,8 +59,10 @@ async function listarContabilidades(db) {
 }
 
 // Normaliza (sem acento, minúsculo) pra comparar nome de arquivo livre —
-// quem anexa digita o nome manualmente, então aceita "Cartão CNPJ.pdf",
-// "cartao_cnpj_empresa.png", "CNPJ cartao.jpg" etc., não só um formato exato.
+// quem anexa digita o nome manualmente. Na prática o arquivo às vezes nem
+// tem "cartão" no nome, só "CNPJ.pdf" mesmo — então o critério é apenas
+// ter "cnpj" no nome (cobre "CNPJ.pdf", "Cartão CNPJ.pdf",
+// "cartao_cnpj_empresa.png" etc.).
 function normalizar(txt) {
   return String(txt || '')
     .normalize('NFD')
@@ -70,10 +72,7 @@ function normalizar(txt) {
 
 async function temCartaoCnpjAnexado(db, processoId) {
   const snap = await db.collection('processos').doc(processoId).collection('documentos').get();
-  return snap.docs.some((d) => {
-    const nome = normalizar(d.data().nome);
-    return nome.includes('cartao') && nome.includes('cnpj');
-  });
+  return snap.docs.some((d) => normalizar(d.data().nome).includes('cnpj'));
 }
 
 async function listarProcessosComCnpjAtivo(db, contabilidadeId, campoImportado) {
