@@ -44,6 +44,13 @@
 //                            que foram enviados). Só leitura (não marca
 //                            nada como importado). Requer
 //                            ?contabilidadeId=.
+//   extrair-certidao (POST) — lê com IA (Claude visão) a Certidão de
+//                            Inteiro Teor anexada ao processo e devolve
+//                            SÓ dados da empresa (razão social, nome
+//                            fantasia, data de abertura, endereço) — nada
+//                            de sócios/CPF. O Ordinatio mostra pra
+//                            conferência antes de preencher o cadastro.
+//                            Aceita {processoId, contabilidadeId}.
 //   marcar-importado (POST) — marca um processo como já importado POR ESSE
 //                            CONSUMIDOR (campo próprio — Sistema Contábil
 //                            e Ordinatio importam de forma independente,
@@ -215,6 +222,108 @@ async function listarProcessosComCnpjAtivo(db, contabilidadeId, campoImportado) 
   return resultado;
 }
 
+const certidaoSchema = {
+  type: 'object',
+  properties: {
+    razaoSocial: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    nomeFantasia: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    dataAbertura: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    cep: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    logradouro: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    numero: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    complemento: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    bairro: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    cidade: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    uf: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+  },
+  required: ['razaoSocial', 'nomeFantasia', 'dataAbertura', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'],
+  additionalProperties: false,
+};
+
+function textoOuNull(v) {
+  const t = String(v ?? '').trim();
+  return t || null;
+}
+
+// Lê a Certidão de Inteiro Teor (Junta Comercial) anexada ao processo.
+// Só campos da empresa — a certidão traz CPF/endereço dos sócios, que
+// ficam de fora de propósito (nem entram no schema).
+async function extrairCertidao(db, processoId, contabilidadeId) {
+  const ref = db.collection('processos').doc(processoId);
+  const snap = await ref.get();
+  if (!snap.exists) return { status: 404, body: { error: 'processo_nao_encontrado' } };
+  // A chave do consumidor vale pra qualquer contabilidade — confere que o
+  // processo é da que o consumidor está configurado pra enxergar.
+  if (snap.data().contabilidadeId !== contabilidadeId) return { status: 403, body: { error: 'processo_de_outra_contabilidade' } };
+
+  const docs = (await ref.collection('documentos').get()).docs.map((d) => d.data());
+  const certidoes = docs
+    .filter((d) => {
+      const n = normalizar(d.nome);
+      return n.includes('inteiro') && n.includes('teor');
+    })
+    .sort((a, b) => String(b.criadoEm).localeCompare(String(a.criadoEm)));
+  const documento = certidoes[0];
+  if (!documento) return { status: 404, body: { error: 'certidao_nao_encontrada' } };
+
+  const mediaType = MEDIA_TYPES_SUPORTADOS[documento.tipo];
+  if (!mediaType) return { status: 400, body: { error: 'formato_nao_suportado', detalhe: documento.tipo } };
+
+  const resp = await fetch(documento.url);
+  if (!resp.ok) return { status: 502, body: { error: 'falha_ao_baixar_documento', detalhe: `HTTP ${resp.status}` } };
+  const data = Buffer.from(await resp.arrayBuffer()).toString('base64');
+  const bloco = mediaType === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: mediaType, data } }
+    : { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
+
+  let v;
+  try {
+    v = await createStructuredMessage({
+      messages: [{
+        role: 'user',
+        content: [
+          bloco,
+          {
+            type: 'text',
+            text: 'Esta é a Certidão de Inteiro Teor de uma empresa, emitida pela Junta Comercial. '
+              + 'Extraia SOMENTE dados da empresa (nunca dados de sócios): razão social (nome empresarial), '
+              + 'nome fantasia (se houver), data de início das atividades/constituição no formato AAAA-MM-DD, '
+              + 'e o endereço da sede — logradouro (sem o número), número, complemento, bairro, cidade, '
+              + 'UF (2 letras) e CEP. Se a certidão registrar alterações (mudança de endereço ou de nome), '
+              + 'use os dados mais recentes. Se um campo não constar com certeza, retorne null — nunca invente.',
+          },
+        ],
+      }],
+      schema: certidaoSchema,
+    });
+  } catch (e) {
+    console.error('extrair-certidao IA', e.message);
+    return { status: 502, body: { error: 'falha_ia', detalhe: e.message } };
+  }
+
+  const data_ = textoOuNull(v?.dataAbertura);
+  const cep = String(v?.cep ?? '').replace(/\D/g, '');
+  const uf = String(v?.uf ?? '').trim().toUpperCase();
+  return {
+    status: 200,
+    body: {
+      campos: {
+        razaoSocial: textoOuNull(v?.razaoSocial),
+        nomeFantasia: textoOuNull(v?.nomeFantasia),
+        dataAbertura: data_ && /^\d{4}-\d{2}-\d{2}$/.test(data_) ? data_ : null,
+        cep: cep.length === 8 ? `${cep.slice(0, 5)}-${cep.slice(5)}` : null,
+        logradouro: textoOuNull(v?.logradouro),
+        numero: textoOuNull(v?.numero),
+        complemento: textoOuNull(v?.complemento),
+        bairro: textoOuNull(v?.bairro),
+        cidade: textoOuNull(v?.cidade),
+        uf: /^[A-Z]{2}$/.test(uf) ? uf : null,
+      },
+      documento: { nome: documento.nome, criadoEm: documento.criadoEm || null },
+    },
+  };
+}
+
 async function listarFluxos(db) {
   const fluxos = {};
   for (const [key, padrao] of Object.entries(FLUXOS_PADRAO)) {
@@ -297,6 +406,13 @@ export default async function handler(req, res) {
   if (req.method === 'GET' && action === 'contabilidades') {
     const contabilidades = await listarContabilidades(db);
     return res.status(200).json({ contabilidades });
+  }
+
+  if (req.method === 'POST' && action === 'extrair-certidao') {
+    const { processoId, contabilidadeId } = req.body || {};
+    if (!processoId || !contabilidadeId) return res.status(400).json({ error: 'parametros_invalidos' });
+    const r = await extrairCertidao(db, processoId, contabilidadeId);
+    return res.status(r.status).json(r.body);
   }
 
   if (req.method === 'GET' && action === 'fluxos') {
