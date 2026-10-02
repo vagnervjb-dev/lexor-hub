@@ -29,6 +29,18 @@
 //                            número de volta no processo. Requer
 //                            ?contabilidadeId=. Aceita ?consumidor=ordinatio
 //                            (padrão: sistema-contabil).
+//   fluxos                 — os 3 fluxos de etapas (abertura, alteração,
+//                            encerramento) com SLA, descrição e checklist
+//                            de cada etapa: o que estiver salvo na coleção
+//                            Firestore `fluxos` (edições feitas na tela
+//                            Fluxos), senão o padrão. Só leitura — o
+//                            Ordinatio espelha, quem edita é a LexorHub.
+//   processos-andamento    — TODOS os processos de uma contabilidade (os
+//                            3 tipos, em andamento e concluídos) com etapa
+//                            atual, checklist da etapa, histórico e
+//                            responsáveis, pro Ordinatio espelhar como
+//                            tarefas. Só leitura (não marca nada como
+//                            importado). Requer ?contabilidadeId=.
 //   marcar-importado (POST) — marca um processo como já importado POR ESSE
 //                            CONSUMIDOR (campo próprio — Sistema Contábil
 //                            e Ordinatio importam de forma independente,
@@ -36,6 +48,7 @@
 //                            {processoId, consumidor}.
 import { getFirebaseAdmin } from './_lib/firebase-admin.js';
 import { createStructuredMessage } from './_lib/anthropic.js';
+import { FLUXOS_PADRAO } from './_lib/fluxos-padrao.js';
 
 // Cada consumidor grava sua própria marca de "já importei" — importar num
 // sistema não pode esconder o processo do outro.
@@ -199,6 +212,59 @@ async function listarProcessosComCnpjAtivo(db, contabilidadeId, campoImportado) 
   return resultado;
 }
 
+async function listarFluxos(db) {
+  const fluxos = {};
+  for (const [key, padrao] of Object.entries(FLUXOS_PADRAO)) {
+    const snap = await db.collection('fluxos').doc(key).get();
+    const salvo = snap.exists ? snap.data() : null;
+    fluxos[key] = {
+      titulo: padrao.titulo,
+      etapas: Array.isArray(salvo?.etapas) && salvo.etapas.length ? salvo.etapas : padrao.etapas,
+      atualizadoEm: salvo?.atualizadoEm || null,
+      personalizado: !!salvo,
+    };
+  }
+  return fluxos;
+}
+
+// Só os campos que o Ordinatio precisa pra espelhar — sem sócios/CPF,
+// WhatsApp ou e-mail do cliente final.
+async function listarProcessosEmAndamento(db, contabilidadeId) {
+  const snap = await db.collection('processos')
+    .where('contabilidadeId', '==', contabilidadeId)
+    .get();
+
+  return snap.docs.map((d) => {
+    const p = d.data();
+    return {
+      id: d.id,
+      empresa: p.empresa || '',
+      cnpj: p.cnpj || '',
+      tipo: p.tipo || '',
+      fluxoKey: p.fluxoKey || 'abertura',
+      etapa: p.etapa || '',
+      etapaIniciadaEm: p.etapaIniciadaEm || p.criadoEm || null,
+      status: p.status || 'andamento',
+      criadoEm: p.criadoEm || null,
+      criadoPorNome: p.criadoPorNome || '',
+      responsavel: p.responsavel || '',
+      respLexor: p.respLexor || '',
+      obs: p.obs || '',
+      cidade: p.cidade || '',
+      uf: p.uf || '',
+      tarefas: Array.isArray(p.tarefas) ? p.tarefas.map((t) => ({ feita: !!t?.feita, data: t?.data || null })) : [],
+      historico: (Array.isArray(p.historico) ? p.historico : []).slice(-30).map((h) => ({
+        tipo: h.tipo || '',
+        etapa: h.etapa || '',
+        proxEtapa: h.proxEtapa || '',
+        obs: h.obs || '',
+        resp: h.resp || '',
+        data: h.data || null,
+      })),
+    };
+  });
+}
+
 export default async function handler(req, res) {
   if (!autenticado(req)) return res.status(401).json({ error: 'nao_autenticado' });
 
@@ -215,6 +281,16 @@ export default async function handler(req, res) {
   if (req.method === 'GET' && action === 'contabilidades') {
     const contabilidades = await listarContabilidades(db);
     return res.status(200).json({ contabilidades });
+  }
+
+  if (req.method === 'GET' && action === 'fluxos') {
+    return res.status(200).json({ fluxos: await listarFluxos(db) });
+  }
+
+  if (req.method === 'GET' && action === 'processos-andamento') {
+    const contabilidadeId = req.query?.contabilidadeId;
+    if (!contabilidadeId) return res.status(400).json({ error: 'contabilidadeId_obrigatorio' });
+    return res.status(200).json({ processos: await listarProcessosEmAndamento(db, contabilidadeId) });
   }
 
   if (req.method === 'GET' && action === 'processos') {
