@@ -3268,7 +3268,17 @@ function abrirAtualizarStatus() {
     if (so) so.value = p.obs || '';
     if (su) su.value = p.uf || '';
     if (sp) sp.value = p.numeroProtocolo || '';
-    if (se && p.etapa) Array.from(se.options).forEach(o => { o.selected = o.text === p.etapa; });
+    // O select era uma lista fixa das etapas de "abertura": etapas de outros fluxos
+    // (alteração/encerramento) ou renomeadas não batiam com nenhuma opção, o select
+    // caía em "Coleta de dados" e salvarStatus gravava isso — o processo "voltava
+    // do zero" ao ser concluído. Agora as opções vêm do fluxo do próprio processo.
+    if (se) {
+      const nomes = (FLUXOS[p.fluxoKey || 'abertura']?.etapas || []).map(e => e.nome);
+      if (p.etapa && !nomes.includes(p.etapa)) nomes.unshift(p.etapa);
+      se.innerHTML = '';
+      nomes.forEach(n => se.appendChild(new Option(n, n)));
+      if (p.etapa) se.value = p.etapa;
+    }
   }
   const el = document.getElementById('modal-atualizar-status');
   if (el) el.classList.add('open');
@@ -3277,7 +3287,12 @@ function abrirAtualizarStatus() {
 async function salvarStatus() {
   const p      = window._processoAberto;
   const status = document.getElementById('status-val').value;
-  const etapa  = document.getElementById('status-etapa').value;
+  let etapa    = document.getElementById('status-etapa').value;
+  // Concluir mantém o processo na última etapa do fluxo dele — nunca volta pro início.
+  if (status === 'concluido') {
+    const etapasFluxo = FLUXOS[p?.fluxoKey || 'abertura']?.etapas || [];
+    if (etapasFluxo.length) etapa = etapasFluxo[etapasFluxo.length - 1].nome;
+  }
   const obs    = document.getElementById('status-obs').value.trim();
   const uf     = document.getElementById('status-uf').value.trim().toUpperCase();
   const numeroProtocolo = document.getElementById('status-protocolo').value.trim();
