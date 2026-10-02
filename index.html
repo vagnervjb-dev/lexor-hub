@@ -955,6 +955,7 @@ tbody tr:hover td{background:var(--bg3);}
       <div class="form-actions">
         <button class="btn btn-accent btn-sm" id="btn-avancar-etapa" onclick="avancarEtapa()">Avançar etapa →</button>
         <button class="btn btn-ghost btn-sm" onclick="abrirAtualizarStatus()">Atualizar status</button>
+        <button class="btn btn-ghost btn-sm" id="btn-excluir-processo" style="color:var(--red);margin-left:auto;display:none" onclick="excluirProcesso()">Excluir processo</button>
       </div>
     </div>
     <div id="ptab-tarefas" class="hidden">
@@ -1495,7 +1496,7 @@ tbody tr:hover td{background:var(--bg3);}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, collection, doc, addDoc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject, listAll } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9aapzUTsLWuQLKWXeieXIFpHChcAShaM",
@@ -3332,6 +3333,51 @@ async function salvarStatus() {
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXCLUIR PROCESSO — definitivo. Só admin; exige digitar o nome da empresa.
+// Apaga também o que pendura no processo (documentos, mensagens, arquivos no
+// Storage), pra não deixar lixo órfão. O doc do processo é o ÚLTIMO a sair: se
+// algo falhar no meio, o processo continua listado e dá pra tentar de novo.
+// ═══════════════════════════════════════════════════════════════════════════
+async function apagarPastaStorage(pastaRef) {
+  const { items, prefixes } = await listAll(pastaRef);
+  await Promise.all(items.map(i => deleteObject(i).catch(e => console.warn('Storage delete:', e.message))));
+  for (const sub of prefixes) await apagarPastaStorage(sub);
+}
+
+window.excluirProcesso = async function() {
+  const p = window._processoAberto;
+  if (window._user?.role !== 'admin') { alert('Só administradores podem excluir processos.'); return; }
+  if (!p?.id) return;
+
+  const digitado = prompt(
+    `Isto exclui DEFINITIVAMENTE o processo "${p.empresa}", com todos os documentos, mensagens e arquivos. Não dá para desfazer.\n\n` +
+    `Para confirmar, digite o nome da empresa exatamente como aparece:`
+  );
+  if (digitado === null) return;
+  if (digitado.trim().toLowerCase() !== (p.empresa || '').trim().toLowerCase()) {
+    alert('O nome digitado não confere — nada foi excluído.');
+    return;
+  }
+
+  try {
+    for (const sub of ['documentos', 'mensagens']) {
+      const snap = await getDocs(collection(db, 'processos', p.id, sub));
+      await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+    }
+    try { await apagarPastaStorage(ref(storage, `processos/${p.id}`)); }
+    catch (e) { console.warn('Storage do processo:', e.message); }
+    await deleteDoc(doc(db, 'processos', p.id));
+
+    closeModal('modal-processo');
+    document.querySelector(`tr[data-id="${p.id}"]`)?.remove();
+    window._processoAberto = null;
+    showSaveIndicator(true);
+  } catch (e) {
+    alert('Erro ao excluir: ' + e.message);
+  }
+};
 
 window.avancarEtapa          = avancarEtapa;
 window.renderHistorico        = renderHistorico;
@@ -5180,6 +5226,10 @@ function openProcesso(p) {
   const docZoneNome  = document.getElementById('doc-zone-etapa-nome');
   if (docZoneLabel) docZoneLabel.dataset.etapa = p.etapa || '';
   if (docZoneNome) docZoneNome.textContent = p.etapa || '—';
+
+  // "Excluir processo" só aparece para admin (as regras do Firestore também exigem admin)
+  const btnExcluir = document.getElementById('btn-excluir-processo');
+  if (btnExcluir) btnExcluir.style.display = (window._user?.role === 'admin' && p.id) ? '' : 'none';
 
   // Cabeçalho
   const h3 = document.querySelector('#modal-processo .modal-header h3');
