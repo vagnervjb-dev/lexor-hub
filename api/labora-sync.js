@@ -39,8 +39,11 @@
 //                            3 tipos, em andamento e concluídos) com etapa
 //                            atual, checklist da etapa, histórico e
 //                            responsáveis, pro Ordinatio espelhar como
-//                            tarefas. Só leitura (não marca nada como
-//                            importado). Requer ?contabilidadeId=.
+//                            tarefas, incluindo os documentos anexados
+//                            ao processo (nome, link de download, etapa em
+//                            que foram enviados). Só leitura (não marca
+//                            nada como importado). Requer
+//                            ?contabilidadeId=.
 //   marcar-importado (POST) — marca um processo como já importado POR ESSE
 //                            CONSUMIDOR (campo próprio — Sistema Contábil
 //                            e Ordinatio importam de forma independente,
@@ -234,8 +237,9 @@ async function listarProcessosEmAndamento(db, contabilidadeId) {
     .where('contabilidadeId', '==', contabilidadeId)
     .get();
 
-  return snap.docs.map((d) => {
+  return Promise.all(snap.docs.map(async (d) => {
     const p = d.data();
+    const docsSnap = await d.ref.collection('documentos').get();
     return {
       id: d.id,
       empresa: p.empresa || '',
@@ -246,6 +250,7 @@ async function listarProcessosEmAndamento(db, contabilidadeId) {
       etapaIniciadaEm: p.etapaIniciadaEm || p.criadoEm || null,
       status: p.status || 'andamento',
       criadoEm: p.criadoEm || null,
+      concluidoEm: p.concluidoEm || null,
       criadoPorNome: p.criadoPorNome || '',
       responsavel: p.responsavel || '',
       respLexor: p.respLexor || '',
@@ -261,8 +266,19 @@ async function listarProcessosEmAndamento(db, contabilidadeId) {
         resp: h.resp || '',
         data: h.data || null,
       })),
+      documentos: docsSnap.docs
+        .map((x) => x.data())
+        .map((x) => ({
+          nome: x.nome || '',
+          url: x.url || '',
+          tipo: x.tipo || '',
+          tamanho: x.tamanho || '',
+          etapa: x.etapa || '',
+          criadoEm: x.criadoEm || null,
+        }))
+        .sort((a, b) => String(a.criadoEm).localeCompare(String(b.criadoEm))),
     };
-  });
+  }));
 }
 
 export default async function handler(req, res) {
