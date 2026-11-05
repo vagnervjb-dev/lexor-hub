@@ -390,6 +390,28 @@ async function listarProcessosEmAndamento(db, contabilidadeId) {
   }));
 }
 
+// Textos com senha/login digitados nas observações (do processo e de cada
+// etapa do histórico) — o Ordinatio lê pra importar as senhas de acesso do
+// cliente (prefeitura, Emissor Nacional...). Só os trechos que mencionam
+// senha/login/usuário, nunca o resto das observações.
+const RE_SENHA = /senha|login|usu[aá]rio|password/i;
+async function listarTextosSenhas(db, contabilidadeId) {
+  const snap = await db.collection('processos')
+    .where('contabilidadeId', '==', contabilidadeId)
+    .get();
+  const itens = [];
+  for (const d of snap.docs) {
+    const p = d.data();
+    const textos = [];
+    if (RE_SENHA.test(p.obs || '')) textos.push({ origem: 'Observações do processo', texto: String(p.obs), data: p.criadoEm || null });
+    for (const h of Array.isArray(p.historico) ? p.historico : []) {
+      if (RE_SENHA.test(h?.obs || '')) textos.push({ origem: `Etapa ${h.etapa || '—'}`, texto: String(h.obs), data: h.data || null, resp: h.resp || '' });
+    }
+    if (textos.length) itens.push({ processoId: d.id, empresa: p.empresa || '', cnpj: p.cnpj || '', textos });
+  }
+  return itens;
+}
+
 export default async function handler(req, res) {
   if (!autenticado(req)) return res.status(401).json({ error: 'nao_autenticado' });
 
@@ -423,6 +445,12 @@ export default async function handler(req, res) {
     const contabilidadeId = req.query?.contabilidadeId;
     if (!contabilidadeId) return res.status(400).json({ error: 'contabilidadeId_obrigatorio' });
     return res.status(200).json({ processos: await listarProcessosEmAndamento(db, contabilidadeId) });
+  }
+
+  if (req.method === 'GET' && action === 'senhas') {
+    const contabilidadeId = req.query?.contabilidadeId;
+    if (!contabilidadeId) return res.status(400).json({ error: 'contabilidadeId_obrigatorio' });
+    return res.status(200).json({ itens: await listarTextosSenhas(db, contabilidadeId) });
   }
 
   if (req.method === 'GET' && action === 'processos') {
