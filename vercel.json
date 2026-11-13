@@ -20,6 +20,10 @@
     },
     "api/consulta-debitos.js": {
       "maxDuration": 300
+    },
+    "api/gerar-proposta.js": {
+      "maxDuration": 300,
+      "memory": 1769
     }
   }
 }

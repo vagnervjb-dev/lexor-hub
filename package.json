@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "firebase-admin": "13.10.0"
+    "@sparticuz/chromium": "^138.0.2",
+    "firebase-admin": "13.10.0",
+    "puppeteer-core": "^24.15.0"
   }
 }
