@@ -140,7 +140,8 @@ h1,h2,h3,p,ul,ol,dl,dd{margin:0}
 .cover h1{margin-top:62mm;font-size:34px;font-weight:700}
 .cover .s{margin-top:8px;font-size:19px;color:var(--gold)}.cover .p{margin-top:6px;font-size:17px;color:#555}
 .cover .f{position:absolute;bottom:42mm;text-align:center;font-size:15px}.cover .f b{display:block;font-weight:400;color:var(--gold)}.cover .f span{color:#888}
-.wrap{padding:0 14mm}
+.pg{height:295mm;padding:0 14mm;overflow:hidden;position:relative;break-after:page;page-break-after:always}
+.pg:last-child{break-after:auto;page-break-after:auto}
 .top{display:flex;justify-content:space-between;padding-block:12px;border-bottom:2px solid var(--gold);font-size:12px;color:var(--grey)}
 .top b{color:var(--ink);display:flex;align-items:center;gap:9px}.top b img{height:28px}
 .eyebrow{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}
@@ -152,7 +153,8 @@ h1,h2,h3,p,ul,ol,dl,dd{margin:0}
 .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:18px}
 .tile{background:var(--soft);border-radius:14px;padding:11px 14px;break-inside:avoid}
 .tile b{display:block;font-family:var(--s);font-size:20px;color:var(--gold)}.tile span{display:block;font-size:12px;color:var(--grey)}
-main{padding-block:22px 8px;display:grid;gap:24px}
+main{display:block;padding-top:22px}
+main>section{margin-bottom:22px}
 .tag{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}
 .sec-head{margin-bottom:10px;break-after:avoid}.sec-head h2{font-family:var(--s);font-size:22px;margin-top:2px}.sec-head p{color:var(--muted);margin-top:4px}
 .lead{background:var(--soft2);border-left:4px solid var(--gold);border-radius:16px;padding:15px 18px;font-family:var(--s);font-size:14.5px;line-height:1.55;break-inside:avoid}
@@ -175,8 +177,7 @@ main{padding-block:22px 8px;display:grid;gap:24px}
 .steps{list-style:none;padding:0;display:grid;gap:12px}.steps li{display:flex;gap:14px;break-inside:avoid}
 .steps .n{width:36px;height:36px;border-radius:50%;background:var(--gold);color:#fff;display:grid;place-items:center;font-weight:800;flex:none}
 .steps b{font-family:var(--s);font-size:15px;display:block}.steps span{color:var(--muted)}
-footer{border-top:1px solid var(--bd);padding:10px 14mm 6px;color:var(--grey);font-size:11px}
-main>section:nth-of-type(3),main>section:nth-of-type(5){break-before:page;padding-top:24px}
+footer{border-top:1px solid var(--bd);padding:10px 0 6px;color:var(--grey);font-size:11px}
 `;
 
 // Monta a proposta completa (capa + miolo). opcoes: {decisor, valores:{etapa1, etapa2, complementares, validade}, numero}
@@ -208,7 +209,7 @@ export function propostaHtml(n, a, { decisor = '', valores = {}, numero = '' } =
 <div class="s">${a.naoSimples ? 'Análise Tributária + Contabilidade Completa' : 'Diagnóstico Fiscal + Contabilidade Completa'}</div>
 <div class="p">Preparado para ${ini}</div>
 <div class="f"><b>${numero ? 'Proposta nº ' + esc(numero) : 'Labora Contabilidade e Gestão'}</b><span>${dataExtenso(hoje)}</span></div></section>
-<div class="wrap"><div class="top"><b><img src="${LOGO_LABORA}" alt="">Labora Contabilidade e Gestão</b><span>Proposta comercial · ${data}</span></div>
+<div class="pg"><div class="top"><b><img src="${LOGO_LABORA}" alt="">Labora Contabilidade e Gestão</b><span>Proposta comercial · ${data}</span></div>
 <div class="hero"><span class="eyebrow">Preparada para ${esc(decisor || nomeCurto(n))}</span>
 <h1>${a.naoSimples ? 'Análise tributária e contabilidade' : 'Diagnóstico fiscal e contabilidade'} <em>para ${ini}.</em></h1><p class="sub">${sub}</p>
 <div class="chips">${chips.map((c) => `<span class="chip ${c[0]}"><i></i>${esc(c[1])}</span>`).join('')}</div>
@@ -222,6 +223,8 @@ export function propostaHtml(n, a, { decisor = '', valores = {}, numero = '' } =
 <section><div class="sec-head"><div class="tag">Entendimento</div><h2>O que observamos</h2></div><p class="lead">${lead}</p></section>
 <section><div class="sec-head"><div class="tag">O que os dados mostram</div><h2>Diagnóstico</h2><p>Pontos que merecem atenção antes de definir o regime e a rotina contábil.</p></div>
 <div class="cards">${a.diag.map((d) => `<article class="card"><div class="row"><h3>${esc(d.t)}</h3><span class="pill ${d.pill[0]}">${esc(d.pill[1])}</span></div><p class="res">${esc(d.res)}</p><p class="note">${esc(d.nota)}</p></article>`).join('')}</div></section>
+</main></div>
+<div class="pg"><main>
 <section><div class="sec-head"><div class="tag">Receita Federal</div><h2>Ficha da empresa</h2><p>Dados públicos da Receita Federal, consultados em ${data}.</p></div>
 <dl class="facts"><div class="fact full"><dt>Razão social</dt><dd>${esc(n.razao_social)}</dd></div>
 ${fatos.map((f) => `<div class="fact"><dt>${f[0]}</dt><dd>${esc(f[1])}</dd></div>`).join('')}
@@ -234,6 +237,8 @@ ${fatos.map((f) => `<div class="fact"><dt>${f[0]}</dt><dd>${esc(f[1])}</dd></div
 <li>Diferença de imposto em reais por ano, em cada regime</li><li>Recomendação por escrito</li><li>Reunião para apresentar o resultado</li></ul></article>
 <article class="card"><div class="stage">Etapa 2</div><h3>Contabilidade mensal</h3><ul><li>Escrituração contábil e fiscal</li><li>Apuração e guias de impostos</li><li>Folha de pagamento e pró-labore</li><li>Obrigações acessórias e certidões</li><li>Atendimento direto com a equipe</li></ul>
 <p class="note">${a.naoSimples ? 'Início previsto para janeiro do próximo ano.' : 'Início combinado com a empresa.'}</p></article></div></section>
+</main></div>
+<div class="pg"><main>
 <section><div class="sec-head"><div class="tag">Opcionais</div><h2>Serviços complementares</h2><p>Contratados somente se fizerem sentido, sem vínculo com as etapas acima.</p></div>
 <div class="cards">${[
     ['Revisão de CNAEs', 'Atualizar o contrato social para que as atividades registradas reflitam o que a empresa faz hoje.'],
@@ -250,7 +255,7 @@ ${fatos.map((f) => `<div class="fact"><dt>${f[0]}</dt><dd>${esc(f[1])}</dd></div
 <li><span class="n">1</span><div><b>Conversa de 20 minutos</b><span>Entendemos como a empresa está hoje e qual regime ela usa.</span></div></li>
 <li><span class="n">2</span><div><b>Envio de documentos</b><span>Faturamento mensal dos últimos 12 meses${a.cndFalhou ? ' e a certidão negativa de débitos federal (CND da Receita e PGFN), que a própria empresa emite no site da Receita' : ''}.</span></div></li>
 <li><span class="n">3</span><div><b>Apresentação do resultado</b><span>Mostramos a diferença em reais por ano e decidimos juntos o que fazer.</span></div></li></ol></section>
-</main></div>
-<footer>Labora Contabilidade e Gestão · Proposta preparada em ${data} com base em dados públicos da Receita Federal. As conclusões tributárias dependem dos números reais da empresa.</footer>
+</main>
+<footer>Labora Contabilidade e Gestão · Proposta preparada em ${data} com base em dados públicos da Receita Federal. As conclusões tributárias dependem dos números reais da empresa.</footer></div>
 </body></html>`;
 }

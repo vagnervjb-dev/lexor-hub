@@ -24,7 +24,10 @@ async function autorizar(req) {
   try { const { auth } = await getFirebaseAdmin(); await auth.verifyIdToken(idToken); return true; } catch { return false; }
 }
 
-async function pdfDe(html) {
+// Gera o PDF e valida a proposta ANTES de entregar: cada página tem de caber na folha (ajusta o zoom se preciso),
+// o texto não pode ter asteriscos/"undefined", e o PDF final tem de ter exatamente as páginas esperadas.
+const PAGINAS_ESPERADAS = 4;
+async function pdfValidado(html, dados) {
   const [{ default: chromium }, { default: puppeteer }] = await Promise.all([import('@sparticuz/chromium'), import('puppeteer-core')]);
   const browser = await puppeteer.launch({
     args: chromium.args, executablePath: process.env.CHROMIUM_PATH || await chromium.executablePath(), headless: 'shell',
@@ -33,8 +36,27 @@ async function pdfDe(html) {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'load', timeout: 30000 });
     await page.emulateMediaType('print');
-    const pdf = await page.pdf({ format: 'A4', printBackground: true, preferCSSPageSize: true });
-    return Buffer.from(pdf);
+    const rel = await page.evaluate(async () => {
+      try { await document.fonts.ready; } catch {}
+      const pgs = [...document.querySelectorAll('.pg')];
+      const fit = pgs.map((el, i) => {
+        let z = 1;
+        while (el.scrollHeight > el.clientHeight + 1 && z > 0.72) { z = +(z - 0.03).toFixed(2); el.style.zoom = z; }
+        return { pagina: i + 1, zoom: z, sobra: Math.max(0, el.scrollHeight - el.clientHeight) };
+      });
+      return { fit, texto: document.body.innerText, paginas: pgs.length + document.querySelectorAll('.cover').length };
+    });
+    const pdf = Buffer.from(await page.pdf({ format: 'A4', printBackground: true, preferCSSPageSize: true }));
+    const nPaginas = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+    const checks = [
+      { item: 'Cada página cabe na folha', ok: rel.fit.every((f) => f.sobra === 0), detalhe: rel.fit.map((f) => `p${f.pagina + 1}${f.zoom < 1 ? ' zoom ' + f.zoom : ''}${f.sobra ? ' ESTOURA ' + f.sobra + 'px' : ''}`).join(', ') },
+      { item: `PDF com ${PAGINAS_ESPERADAS} páginas`, ok: nPaginas === PAGINAS_ESPERADAS, detalhe: `${nPaginas} páginas` },
+      { item: 'Sem asteriscos no texto', ok: !/\*/.test(rel.texto) },
+      { item: 'Sem valores vazios (undefined/null/NaN)', ok: !/undefined|\bnull\b|NaN|\[object/.test(rel.texto) },
+      { item: 'Nome da empresa presente', ok: !!dados.razao_social && rel.texto.toLowerCase().includes(String(dados.razao_social).toLowerCase().slice(0, 12)) },
+      { item: 'Identidade Labora presente', ok: /Labora Contabilidade e Gestão/.test(rel.texto) },
+    ];
+    return { pdf, validacao: { ok: checks.every((c) => c.ok), checks } };
   } finally { await browser.close(); }
 }
 
@@ -69,7 +91,9 @@ export default async function handler(req, res) {
     const out = { etapa, empresa: nomeCurto(dados), dados, debitos: deb, diagnostico: { diag: a.diag, oportunidades: a.oportunidades }, mensagem: mensagemContato(dados, a, opts) };
     if (etapa === 'proposta') {
       const html = propostaHtml(dados, a, { decisor: opts.decisor, valores: b.valores || {}, numero: b.numero || '' });
-      const pdf = await pdfDe(html);
+      const { pdf, validacao } = await pdfValidado(html, dados);
+      if (!validacao.ok) return res.status(422).json({ error: 'proposta_reprovada_na_validacao', validacao });
+      out.validacao = validacao;
       out.mensagem = mensagemProposta(dados, a, opts);
       out.mensagem_contato = mensagemContato(dados, a, opts);
       out.arquivo = { nome: `Proposta-${nomeCurto(dados).replace(/\s+/g, '-')}.pdf`, tipo: 'application/pdf', base64: pdf.toString('base64') };
