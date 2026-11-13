@@ -406,6 +406,7 @@ tbody tr:hover td{background:var(--bg3);}
       </div>
     </div>
     <div class="topbar-right">
+      <button class="btn btn-ghost btn-sm" onclick="abrirConsultaCnpj(true)" title="Consultar qualquer CNPJ na Receita Federal">🔎 Consultar CNPJ</button>
       <div style="font-size:11px;color:#A89E7E;font-family:'DM Mono',monospace;display:flex;align-items:center;gap:6px;" id="save-indicator">
         <span style="width:6px;height:6px;border-radius:50%;background:#2E7D52;display:inline-block;"></span>
         <span id="save-indicator-text">Salvo localmente</span>
@@ -5905,8 +5906,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ═══ CONSULTA COMPLETA DE CNPJ (Infosimples → Receita Federal; reserva: BrasilAPI) ═══
-window.abrirConsultaCnpj = function(){
-  const cnpj = window._processoAberto?.cnpj || '';
+window.abrirConsultaCnpj = function(avulso){
+  const cnpj = avulso ? '' : (window._processoAberto?.cnpj || '');
   document.getElementById('cnpj-input').value = cnpj ? formatarCNPJ(cnpj) : '';
   document.getElementById('cnpj-resultado').innerHTML = 'Digite o CNPJ e clique em Consultar. Dados da Receita Federal.';
   openModal('modal-cnpj');
