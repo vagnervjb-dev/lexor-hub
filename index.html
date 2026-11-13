@@ -955,6 +955,7 @@ tbody tr:hover td{background:var(--bg3);}
       <div class="form-actions">
         <button class="btn btn-accent btn-sm" id="btn-avancar-etapa" onclick="avancarEtapa()">Avançar etapa →</button>
         <button class="btn btn-ghost btn-sm" onclick="abrirAtualizarStatus()">Atualizar status</button>
+        <button class="btn btn-ghost btn-sm" onclick="abrirConsultaCnpj()">🔎 Consultar CNPJ</button>
         <button class="btn btn-ghost btn-sm" id="btn-excluir-processo" style="color:var(--red);margin-left:auto;display:none" onclick="excluirProcesso()">Excluir processo</button>
       </div>
     </div>
@@ -1149,6 +1150,16 @@ tbody tr:hover td{background:var(--bg3);}
 </div>
 
 <!-- MODAL NOVO PROCESSO -->
+<div class="modal-overlay" id="modal-cnpj">
+  <div class="modal" style="width:680px;max-height:90vh;overflow:auto">
+    <div class="modal-header"><h3>Consultar empresa (CNPJ)</h3><button class="modal-close" onclick="closeModal('modal-cnpj')">✕</button></div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input id="cnpj-input" placeholder="00.000.000/0000-00" maxlength="18" style="flex:1" oninput="this.value=formatarCNPJ(this.value)" onkeydown="if(event.key==='Enter')consultarCnpj()"/>
+      <button class="btn btn-accent btn-sm" id="cnpj-btn" onclick="consultarCnpj()">Consultar</button>
+    </div>
+    <div id="cnpj-resultado" style="font-size:12px;color:var(--text3)">Digite o CNPJ e clique em Consultar. Dados da Receita Federal.</div>
+  </div>
+</div>
 <div class="modal-overlay" id="modal-novo-processo">
   <div class="modal" style="width:720px;">
     <div class="modal-header"><h3>Novo processo</h3><button class="modal-close" onclick="closeModal('modal-novo-processo')">✕</button></div>
@@ -5892,6 +5903,75 @@ document.addEventListener('DOMContentLoaded', () => {
   renderProcessosCriados();
   if (APP_DATA.lastSaved) showSaveIndicator(true);
 });
+
+// ═══ CONSULTA COMPLETA DE CNPJ (Infosimples → Receita Federal; reserva: BrasilAPI) ═══
+window.abrirConsultaCnpj = function(){
+  const cnpj = window._processoAberto?.cnpj || '';
+  document.getElementById('cnpj-input').value = cnpj ? formatarCNPJ(cnpj) : '';
+  document.getElementById('cnpj-resultado').innerHTML = 'Digite o CNPJ e clique em Consultar. Dados da Receita Federal.';
+  openModal('modal-cnpj');
+  setTimeout(()=>document.getElementById('cnpj-input').focus(),50);
+};
+function _cnpjNormInfosimples(d){
+  return {fonte:'Receita Federal (Infosimples)', razao_social:d.razao_social, nome_fantasia:d.nome_fantasia, cnpj:d.cnpj,
+    situacao:(d.situacao_cadastral||'')+(d.situacao_cadastral_data?' ('+d.situacao_cadastral_data+')':''), abertura:d.abertura_data,
+    natureza:d.natureza_juridica, porte:d.porte, capital:d.capital_social, matriz:d.matriz_filial, telefone:d.telefone, email:d.email,
+    endereco:[d.endereco_logradouro,d.endereco_numero,d.endereco_complemento].filter(Boolean).join(', ')+' — '+[d.endereco_bairro,(d.endereco_municipio||'')+'/'+(d.endereco_uf||''),d.endereco_cep].filter(Boolean).join(' · '),
+    cnae:d.atividade_economica, secundarios:d.atividade_economica_secundaria_lista||[],
+    socios:(d.qsa||[]).map(q=>({nome:q.nome,qual:q.qualificacao}))};
+}
+function _cnpjNormBrasilApi(d){
+  const fd=x=>x?x.split('-').reverse().join('/'):'';
+  return {fonte:'BrasilAPI (reserva)', razao_social:d.razao_social, nome_fantasia:d.nome_fantasia, cnpj:d.cnpj,
+    situacao:(d.descricao_situacao_cadastral||'')+(d.data_situacao_cadastral?' ('+fd(d.data_situacao_cadastral)+')':''), abertura:fd(d.data_inicio_atividade),
+    natureza:d.natureza_juridica, porte:d.porte, capital:d.capital_social!=null?Number(d.capital_social).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'', matriz:'',
+    telefone:d.ddd_telefone_1, email:d.email,
+    endereco:[d.descricao_tipo_de_logradouro,d.logradouro,d.numero,d.complemento].filter(Boolean).join(' ')+' — '+[d.bairro,(d.municipio||'')+'/'+(d.uf||''),d.cep].filter(Boolean).join(' · '),
+    cnae:(d.cnae_fiscal||'')+' - '+(d.cnae_fiscal_descricao||''), secundarios:(d.cnaes_secundarios||[]).map(c=>c.codigo+' - '+c.descricao),
+    socios:(d.qsa||[]).map(q=>({nome:q.nome_socio,qual:q.qualificacao_socio}))};
+}
+window.consultarCnpj = async function(){
+  const cnpj = document.getElementById('cnpj-input').value.replace(/\D/g,'');
+  const out = document.getElementById('cnpj-resultado');
+  if(cnpj.length !== 14){ out.innerHTML = '<span style="color:#C0392B">CNPJ deve ter 14 dígitos.</span>'; return; }
+  const btn = document.getElementById('cnpj-btn'); btn.disabled = true; btn.textContent = 'Consultando...';
+  out.textContent = 'Buscando na Receita Federal...';
+  try{
+    let n = null;
+    try{
+      const j = await chamarApiIA('/api/consulta-cnpj', {cnpj});
+      if(j.data) n = _cnpjNormInfosimples(j.data);
+    }catch(e){
+      if(/infosimples_612|cnpj_invalido/.test(e.message)) throw new Error('CNPJ não encontrado na Receita.');
+      console.warn('Infosimples falhou, usando reserva:', e.message);
+    }
+    if(!n){
+      const r = await fetch('https://brasilapi.com.br/api/cnpj/v1/'+cnpj);
+      if(!r.ok) throw new Error(r.status===404 ? 'CNPJ não encontrado.' : 'Serviço indisponível ('+r.status+'). Tente novamente.');
+      n = _cnpjNormBrasilApi(await r.json());
+    }
+    const esc = t => String(t==null||t===''?'—':t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const card = (l,v)=>`<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px"><div style="font-size:10px;color:var(--text3);margin-bottom:2px">${l}</div><div style="font-size:12px;font-weight:500;color:var(--text)">${esc(v)}</div></div>`;
+    const socios = n.socios.map(q=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><b style="color:var(--text)">${esc(q.nome)}</b><div style="font-size:11px">${esc(q.qual)}</div></div>`).join('') || '<div>Sem sócios informados.</div>';
+    const sec = n.secundarios.map(c=>`<div style="font-size:11px;padding:2px 0">${esc(c)}</div>`).join('') || '<div style="font-size:11px">—</div>';
+    out.innerHTML = `
+      <div style="font-size:10px;color:var(--text3);margin-bottom:6px">Fonte: ${esc(n.fonte)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+        <div style="grid-column:1/-1">${card('Razão social',n.razao_social)}</div>
+        ${card('Nome fantasia',n.nome_fantasia)}${card('CNPJ',n.cnpj)}
+        ${card('Situação cadastral',n.situacao)}${card('Abertura',n.abertura)}
+        ${card('Natureza jurídica',n.natureza)}${card('Porte',n.porte)}
+        ${card('Capital social',n.capital)}${card('Matriz / Filial',n.matriz)}
+        ${card('Telefone',n.telefone)}${card('E-mail',n.email)}
+        <div style="grid-column:1/-1">${card('Endereço',n.endereco)}</div>
+        <div style="grid-column:1/-1">${card('CNAE principal',n.cnae)}</div>
+      </div>
+      <div style="font-weight:600;color:var(--text);margin:8px 0 4px">Quadro societário</div>${socios}
+      <div style="font-weight:600;color:var(--text);margin:12px 0 4px">CNAEs secundários</div>${sec}`;
+  }catch(e){
+    out.innerHTML = '<span style="color:#C0392B">'+(e.message||'Erro na consulta.')+'</span>';
+  }finally{ btn.disabled = false; btn.textContent = 'Consultar'; }
+};
 </script>
 </div><!-- fim #admin-app -->
 </body>
