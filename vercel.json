@@ -17,6 +17,9 @@
     },
     "api/labora-sync.js": {
       "maxDuration": 300
+    },
+    "api/consulta-debitos.js": {
+      "maxDuration": 300
     }
   }
 }

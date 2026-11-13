@@ -1159,6 +1159,11 @@ tbody tr:hover td{background:var(--bg3);}
       <button class="btn btn-accent btn-sm" id="cnpj-btn" onclick="consultarCnpj()">Consultar</button>
     </div>
     <div id="cnpj-resultado" style="font-size:12px;color:var(--text3)">Digite o CNPJ e clique em Consultar. Dados da Receita Federal.</div>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost btn-sm" id="deb-btn" onclick="verificarDebitosAvulso()">⚖️ Verificar débitos (PGFN · Simples · FGTS)</button>
+      <span style="font-size:10px;color:var(--text3);margin-left:6px">≈ R$ 0,75 por verificação</span>
+      <div id="deb-resultado" style="font-size:12px;margin-top:10px"></div>
+    </div>
   </div>
 </div>
 <div class="modal-overlay" id="modal-novo-processo">
@@ -5972,6 +5977,34 @@ window.consultarCnpj = async function(){
   }catch(e){
     out.innerHTML = '<span style="color:#C0392B">'+(e.message||'Erro na consulta.')+'</span>';
   }finally{ btn.disabled = false; btn.textContent = 'Consultar'; }
+};
+
+window.verificarDebitosAvulso = async function(){
+  const cnpj = document.getElementById('cnpj-input').value.replace(/\D/g,'');
+  const out = document.getElementById('deb-resultado');
+  if(cnpj.length !== 14){ out.innerHTML = '<span style="color:#C0392B">Digite um CNPJ válido (14 dígitos).</span>'; return; }
+  const btn = document.getElementById('deb-btn'); btn.disabled = true; btn.textContent = 'Verificando... (pode levar 1 min)';
+  out.textContent = 'Consultando PGFN, Simples Nacional e FGTS...';
+  try{
+    const j = await chamarApiIA('/api/consulta-debitos', {cnpj});
+    const esc = t => String(t==null||t===''?'—':t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const linha = (titulo, cor, txt, det) => `<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;margin-bottom:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm)"><span style="width:9px;height:9px;border-radius:50%;background:${cor};margin-top:4px;flex:none"></span><div><div style="font-weight:600;color:var(--text)">${titulo} — ${esc(txt)}</div><div style="font-size:11px;color:var(--text3)">${det||''}</div></div></div>`;
+    const VERDE='#2E7D52', VERM='#C0392B', CINZA='#9a9a9a';
+    let h='';
+    const p=j.pgfn;
+    if(!p.ok) h+=linha('CND federal (PGFN/RFB)',CINZA,'não consultado',esc(p.erro));
+    else{ const deb=p.debitosPgfn||p.debitosRfb;
+      h+=linha('CND federal (PGFN/RFB)',deb?VERM:VERDE,deb?'COM DÉBITOS':'sem débitos',[p.debitosRfb?'débitos na Receita':'',p.debitosPgfn?'débitos na PGFN':'',p.tipo?esc(p.tipo):'',p.validade?'validade '+esc(p.validade):''].filter(Boolean).join(' · ')); }
+    const s=j.simples;
+    if(!s.ok) h+=linha('Simples Nacional',CINZA,'não consultado',esc(s.erro));
+    else h+=linha('Simples Nacional',/optante/i.test(s.situacao||'')&&!/n[ãa]o/i.test(s.situacao||'')?VERDE:CINZA,s.situacao,s.simei?'SIMEI: '+esc(s.simei):'');
+    const f=j.fgts;
+    if(!f.ok) h+=linha('FGTS (Caixa)',CINZA,'não consultado',esc(f.erro));
+    else h+=linha('FGTS (Caixa)',/regular/i.test(f.situacao||'')&&!/irregular/i.test(f.situacao||'')?VERDE:VERM,f.situacao,f.validadeFim?'CRF válido até '+esc(f.validadeFim):'');
+    out.innerHTML = h;
+  }catch(e){
+    out.innerHTML = '<span style="color:#C0392B">'+(e.message||'Erro na verificação.')+'</span>';
+  }finally{ btn.disabled=false; btn.textContent='⚖️ Verificar débitos (PGFN · Simples · FGTS)'; }
 };
 </script>
 </div><!-- fim #admin-app -->
