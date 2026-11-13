@@ -132,9 +132,10 @@ const CSS = `
 --ok:#1D7A4B;--ok-bg:#E1F3E9;--warn:#9A5A06;--warn-bg:#FDF0D8;--idle:#58677A;--idle-bg:#E8EEF5;
 --f:'Inter',-apple-system,'Segoe UI',Arial,sans-serif;--s:'Liberation Serif','Times New Roman',Georgia,serif}
 *{box-sizing:border-box}html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;padding:0}
 body{margin:0;background:#fff;color:var(--ink);font-family:var(--f);font-size:13px;line-height:1.5}
 h1,h2,h3,p,ul,ol,dl,dd{margin:0}
-.cover{height:297mm;display:flex;flex-direction:column;align-items:center;font-family:var(--s);break-after:page;position:relative}
+.cover{height:295mm;overflow:hidden;display:flex;flex-direction:column;align-items:center;font-family:var(--s);break-after:page;page-break-after:always;position:relative}
 .cover img{margin-top:46mm;width:78mm}
 .cover h1{margin-top:62mm;font-size:34px;font-weight:700}
 .cover .s{margin-top:8px;font-size:19px;color:var(--gold)}.cover .p{margin-top:6px;font-size:17px;color:#555}
