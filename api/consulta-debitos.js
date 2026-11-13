@@ -53,7 +53,15 @@ export default async function handler(req, res) {
   if (cnpj.length !== 14) return res.status(400).json({ error: 'cnpj_invalido' });
   if (!process.env.INFOSIMPLES_TOKEN) return res.status(500).json({ error: 'INFOSIMPLES_TOKEN_ausente' });
 
-  const [a, b, c] = await Promise.allSettled([pgfn(cnpj), simples(cnpj), fgts(cnpj)]);
-  const pack = (r) => r.status === 'fulfilled' ? { ok: true, ...r.value } : { ok: false, erro: String(r.reason?.message || r.reason) };
-  return res.status(200).json({ pgfn: pack(a), simples: pack(b), fgts: pack(c) });
+  // Permite refazer só o que falhou: body.servicos = ['pgfn'] | ['simples'] | ['fgts'] (padrão: os três)
+  const pedidos = Array.isArray(req.body?.servicos) && req.body.servicos.length ? req.body.servicos : ['pgfn', 'simples', 'fgts'];
+  const mapa = { pgfn, simples, fgts };
+  const pack = (r) => r.status === 'fulfilled'
+    ? { ok: true, ...r.value }
+    : { ok: false, erro: String(r.reason?.message || r.reason), instavel: /\b6\d\d:/.test(String(r.reason?.message || '')) };
+  const nomes = pedidos.filter((n) => mapa[n]);
+  const resultados = await Promise.allSettled(nomes.map((n) => mapa[n](cnpj)));
+  const out = {};
+  nomes.forEach((n, i) => { out[n] = pack(resultados[i]); });
+  return res.status(200).json(out);
 }

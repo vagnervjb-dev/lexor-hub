@@ -1164,6 +1164,24 @@ tbody tr:hover td{background:var(--bg3);}
       <span style="font-size:10px;color:var(--text3);margin-left:6px">≈ R$ 0,75 por verificação</span>
       <div id="deb-resultado" style="font-size:12px;margin-top:10px"></div>
     </div>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <button class="btn btn-accent btn-sm" id="dossie-btn" onclick="gerarDossie()">📄 Gerar dossiê comercial</button>
+      <span style="font-size:10px;color:var(--text3);margin-left:6px">Ficha + débitos + oportunidades + mensagem de WhatsApp · ≈ R$ 1,00</span>
+      <div id="dossie-status" style="font-size:12px;margin-top:8px;color:var(--text3)"></div>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="modal-dossie">
+  <div class="modal" style="width:900px;max-width:96vw;max-height:94vh;overflow:auto">
+    <div class="modal-header"><h3>Dossiê comercial</h3><button class="modal-close" onclick="closeModal('modal-dossie')">✕</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn btn-accent btn-sm" onclick="imprimirDossie()">Imprimir / salvar PDF</button>
+      <span style="font-size:11px;color:var(--text3);align-self:center">Na janela de impressão, escolha "Salvar como PDF" e marque "Gráficos de fundo".</span>
+    </div>
+    <iframe id="dossie-frame" title="Dossiê" style="width:100%;height:560px;border:1px solid var(--border);border-radius:var(--r-sm);background:#fff"></iframe>
+    <div style="margin-top:14px;font-weight:600;font-size:13px">Mensagem de WhatsApp sugerida (editável)</div>
+    <textarea id="dossie-msg" style="width:100%;min-height:170px;margin-top:6px;font:13px/1.5 inherit;padding:10px;border:1px solid var(--border);border-radius:var(--r-sm)"></textarea>
+    <div class="form-actions"><button class="btn btn-ghost btn-sm" id="dossie-copiar" onclick="copiarMsgDossie()">Copiar mensagem</button></div>
   </div>
 </div>
 <div class="modal-overlay" id="modal-novo-processo">
@@ -5956,6 +5974,7 @@ window.consultarCnpj = async function(){
       if(!r.ok) throw new Error(r.status===404 ? 'CNPJ não encontrado.' : 'Serviço indisponível ('+r.status+'). Tente novamente.');
       n = _cnpjNormBrasilApi(await r.json());
     }
+    window._cnpjNorm = n;
     const esc = t => String(t==null||t===''?'—':t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
     const card = (l,v)=>`<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px"><div style="font-size:10px;color:var(--text3);margin-bottom:2px">${l}</div><div style="font-size:12px;font-weight:500;color:var(--text)">${esc(v)}</div></div>`;
     const socios = n.socios.map(q=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><b style="color:var(--text)">${esc(q.nome)}</b><div style="font-size:11px">${esc(q.qual)}</div></div>`).join('') || '<div>Sem sócios informados.</div>';
@@ -5979,32 +5998,162 @@ window.consultarCnpj = async function(){
   }finally{ btn.disabled = false; btn.textContent = 'Consultar'; }
 };
 
-window.verificarDebitosAvulso = async function(){
+// ─── Débitos: estado, retry só do que falhou ─────────────────────────────────
+window._deb = {cnpj:'', data:{}};
+function _escH(t){return String(t==null||t===''?'—':t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function _debRender(){
+  const out = document.getElementById('deb-resultado'); const d = window._deb.data;
+  const VERDE='#2E7D52', VERM='#C0392B', CINZA='#9a9a9a';
+  const linha = (titulo, cor, txt, det, retry) => `<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;margin-bottom:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm)"><span style="width:9px;height:9px;border-radius:50%;background:${cor};margin-top:4px;flex:none"></span><div style="flex:1"><div style="font-weight:600;color:var(--text)">${titulo} — ${_escH(txt)}</div><div style="font-size:11px;color:var(--text3)">${det||''}</div></div>${retry?`<button class="btn btn-ghost btn-sm" onclick="verificarDebitosAvulso(['${retry}'])">Tentar de novo</button>`:''}</div>`;
+  const falha = (o,srv) => o.instavel ? ['não respondeu','A fonte está instável e não devolveu o resultado. Isso não diz nada sobre a empresa. Tente de novo (≈ R$ 0,25).'] : ['não consultado',_escH(o.erro)];
+  let h='';
+  const p=d.pgfn; if(p){
+    if(!p.ok){const [t,m]=falha(p); h+=linha('CND federal (PGFN/RFB)',CINZA,t,m,'pgfn');}
+    else{const deb=p.debitosPgfn||p.debitosRfb; h+=linha('CND federal (PGFN/RFB)',deb?VERM:VERDE,deb?'COM DÉBITOS':'sem débitos',[p.debitosRfb?'débitos na Receita':'',p.debitosPgfn?'débitos na PGFN':'',p.tipo?_escH(p.tipo):'',p.validade?'validade '+_escH(p.validade):''].filter(Boolean).join(' · '));}
+  }
+  const s=d.simples; if(s){
+    if(!s.ok){const [t,m]=falha(s); h+=linha('Simples Nacional',CINZA,t,m,'simples');}
+    else h+=linha('Simples Nacional',/optante/i.test(s.situacao||'')&&!/n[ãa]o/i.test(s.situacao||'')?VERDE:CINZA,s.situacao,s.simei?'SIMEI: '+_escH(s.simei):'');
+  }
+  const f=d.fgts; if(f){
+    if(!f.ok){const [t,m]=falha(f); h+=linha('FGTS (Caixa)',CINZA,t,m,'fgts');}
+    else h+=linha('FGTS (Caixa)',/regular/i.test(f.situacao||'')&&!/irregular/i.test(f.situacao||'')?VERDE:VERM,f.situacao,f.validadeFim?'CRF válido até '+_escH(f.validadeFim):'');
+  }
+  out.innerHTML = h;
+}
+window.verificarDebitosAvulso = async function(servicos){
   const cnpj = document.getElementById('cnpj-input').value.replace(/\D/g,'');
   const out = document.getElementById('deb-resultado');
   if(cnpj.length !== 14){ out.innerHTML = '<span style="color:#C0392B">Digite um CNPJ válido (14 dígitos).</span>'; return; }
+  const parcial = Array.isArray(servicos) && servicos.length;
+  if(window._deb.cnpj !== cnpj){ window._deb = {cnpj, data:{}}; }
   const btn = document.getElementById('deb-btn'); btn.disabled = true; btn.textContent = 'Verificando... (pode levar 1 min)';
-  out.textContent = 'Consultando PGFN, Simples Nacional e FGTS...';
+  if(!parcial) out.textContent = 'Consultando PGFN, Simples Nacional e FGTS...';
   try{
-    const j = await chamarApiIA('/api/consulta-debitos', {cnpj});
-    const esc = t => String(t==null||t===''?'—':t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-    const linha = (titulo, cor, txt, det) => `<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;margin-bottom:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm)"><span style="width:9px;height:9px;border-radius:50%;background:${cor};margin-top:4px;flex:none"></span><div><div style="font-weight:600;color:var(--text)">${titulo} — ${esc(txt)}</div><div style="font-size:11px;color:var(--text3)">${det||''}</div></div></div>`;
-    const VERDE='#2E7D52', VERM='#C0392B', CINZA='#9a9a9a';
-    let h='';
-    const p=j.pgfn;
-    if(!p.ok) h+=linha('CND federal (PGFN/RFB)',CINZA,'não consultado',esc(p.erro));
-    else{ const deb=p.debitosPgfn||p.debitosRfb;
-      h+=linha('CND federal (PGFN/RFB)',deb?VERM:VERDE,deb?'COM DÉBITOS':'sem débitos',[p.debitosRfb?'débitos na Receita':'',p.debitosPgfn?'débitos na PGFN':'',p.tipo?esc(p.tipo):'',p.validade?'validade '+esc(p.validade):''].filter(Boolean).join(' · ')); }
-    const s=j.simples;
-    if(!s.ok) h+=linha('Simples Nacional',CINZA,'não consultado',esc(s.erro));
-    else h+=linha('Simples Nacional',/optante/i.test(s.situacao||'')&&!/n[ãa]o/i.test(s.situacao||'')?VERDE:CINZA,s.situacao,s.simei?'SIMEI: '+esc(s.simei):'');
-    const f=j.fgts;
-    if(!f.ok) h+=linha('FGTS (Caixa)',CINZA,'não consultado',esc(f.erro));
-    else h+=linha('FGTS (Caixa)',/regular/i.test(f.situacao||'')&&!/irregular/i.test(f.situacao||'')?VERDE:VERM,f.situacao,f.validadeFim?'CRF válido até '+esc(f.validadeFim):'');
-    out.innerHTML = h;
+    const j = await chamarApiIA('/api/consulta-debitos', parcial ? {cnpj, servicos} : {cnpj});
+    Object.assign(window._deb.data, j);
+    _debRender();
   }catch(e){
     out.innerHTML = '<span style="color:#C0392B">'+(e.message||'Erro na verificação.')+'</span>';
   }finally{ btn.disabled=false; btn.textContent='⚖️ Verificar débitos (PGFN · Simples · FGTS)'; }
+};
+
+// ─── DOSSIÊ COMERCIAL: ficha + débitos + oportunidades + mensagem ─────────────
+async function _buscarCnpjNorm(cnpj){
+  try{
+    const j = await chamarApiIA('/api/consulta-cnpj', {cnpj});
+    if(j.data) return _cnpjNormInfosimples(j.data);
+  }catch(e){
+    if(/infosimples_612|cnpj_invalido/.test(e.message)) throw new Error('CNPJ não encontrado na Receita.');
+  }
+  const r = await fetch('https://brasilapi.com.br/api/cnpj/v1/'+cnpj);
+  if(!r.ok) throw new Error(r.status===404 ? 'CNPJ não encontrado.' : 'Serviço indisponível ('+r.status+').');
+  return _cnpjNormBrasilApi(await r.json());
+}
+function _diasAte(br){ // 'dd/mm/aaaa' -> dias a partir de hoje
+  const m=/(\d{2})\/(\d{2})\/(\d{4})/.exec(br||''); if(!m) return null;
+  return Math.round((new Date(+m[3],+m[2]-1,+m[1]) - new Date(new Date().toDateString()))/86400000);
+}
+function _dossieAnalise(n, deb){
+  const sim=deb.simples, p=deb.pgfn, f=deb.fgts;
+  const naoSimples = !!(sim&&sim.ok&&/n[ãa]o\s+optante/i.test(sim.situacao||''));
+  const optSimples = !!(sim&&sim.ok&&!naoSimples&&/optante/i.test(sim.situacao||''));
+  const cndFalhou = !p||!p.ok, cndDebitos = !!(p&&p.ok&&(p.debitosPgfn||p.debitosRfb));
+  const fgtsOk = !!(f&&f.ok&&/regular/i.test(f.situacao||'')&&!/irregular/i.test(f.situacao||''));
+  const fgtsIrreg = !!(f&&f.ok&&!fgtsOk);
+  const fgtsDias = f&&f.ok ? _diasAte(f.validadeFim) : null;
+  const diag=[];
+  diag.push({t:'Situação cadastral', pill:/ATIV/i.test(n.situacao||'')?['ok','Ativa']:['warn','Verificar'], res:n.situacao, nota:'Dados da Receita Federal.'});
+  if(sim) diag.push({t:'Simples Nacional', pill: !sim.ok?['idle','Sem resultado']: naoSimples?['warn','Em análise']:['ok','Optante'], res: sim.ok?sim.situacao:'Não foi possível consultar',
+    nota: !sim.ok?'A fonte não respondeu.': naoSimples?'Fora do Simples. A opção é decidida em janeiro, então vale simular o regime agora.':'Optante. Vale revisar enquadramento e anexo.'});
+  if(f) diag.push({t:'FGTS (Caixa)', pill: !f.ok?['idle','Sem resultado']: fgtsOk?['ok','Regular']:['warn','Irregular'], res: f.ok?(f.situacao+(f.validadeFim?' · válido até '+f.validadeFim:'')):'Não foi possível consultar',
+    nota: !f.ok?'A fonte não respondeu.': fgtsIrreg?'Situação irregular no FGTS. Precisa de regularização.': (fgtsDias!=null&&fgtsDias<=30?`O certificado vence em ${fgtsDias} dias e pode ser renovado.`:'Regular.')});
+  if(p) diag.push({t:'CND federal (PGFN e Receita)', pill: !p.ok?['idle','Sem resultado']: cndDebitos?['warn','Com débitos']:['ok','Sem débitos'], res: !p.ok?'Não foi possível validar':(cndDebitos?'Há débitos federais em aberto':'Sem débitos federais'),
+    nota: !p.ok?'A consulta automática não conseguiu validar. Peça a certidão à empresa; o erro costuma ser instabilidade da fonte.': cndDebitos?'Débitos identificados na consulta pública. Confirmar valores antes de falar com a empresa.':'Certidão emitida sem apontamentos.'});
+  const op=[];
+  if(naoSimples) op.push(['Simulação de regime: Simples ou Lucro Presumido','Não optante pelo Simples. A opção é feita em janeiro, então o momento de preparar é agora.']);
+  else if(optSimples) op.push(['Revisão de enquadramento no Simples','Verificar anexo, Fator R e se o faturamento ainda cabe no regime.']);
+  if(cndDebitos) op.push(['Regularização de débitos federais','Há apontamento na CND. Levantar valores e propor parcelamento ou regularização.']);
+  if(cndFalhou) op.push(['Validação da CND federal','A consulta automática não conseguiu validar. Pedir a certidão emitida pela empresa.']);
+  if(fgtsIrreg) op.push(['Regularização do FGTS','Situação irregular na Caixa.']);
+  else if(fgtsDias!=null&&fgtsDias<=30) op.push(['Renovação do certificado de FGTS',`Vence em ${fgtsDias} dias.`]);
+  op.push(['Contabilidade completa','Fiscal, folha e pró-labore, obrigações acessórias e atendimento direto.']);
+  if((n.secundarios||[]).length>=6) op.push(['Revisão de CNAEs',`${n.secundarios.length} atividades secundárias registradas. Conferir se refletem a operação.`]);
+  op.push(['Registro de marca no INPI','Consultar disponibilidade e registrar o nome comercial.']);
+  op.push(['Certificado digital e-CNPJ','Emissão ou renovação do certificado da empresa.']);
+  // mensagem
+  const nome=((n.socios&&n.socios[0]&&n.socios[0].nome)||'').split(' ')[0];
+  const nomeFmt=nome?nome.charAt(0)+nome.slice(1).toLowerCase():'';
+  const par=[`Olá${nomeFmt?', '+nomeFmt:''}! Aqui é a equipe da Labora Contabilidade e Gestão. Analisamos os dados públicos da ${n.razao_social}.`];
+  if(cndFalhou) par.push('Nossa consulta automática não conseguiu validar a certidão negativa de débitos federal (CND da Receita e PGFN). Vocês podem nos enviar a certidão? Ela é emitida pela própria empresa no site da Receita.');
+  if(cndDebitos) par.push('Na consulta pública apareceram apontamentos na situação federal da empresa. Podemos conversar sobre como regularizar?');
+  if(naoSimples) par.push('Pelos dados públicos, a empresa não está no Simples Nacional, e a escolha do regime é feita em janeiro. Fazemos uma simulação comparando os regimes para ver se há economia de impostos; para isso precisamos do faturamento dos últimos 12 meses.');
+  par.push('Podemos conversar? Se preferirem não receber mensagens, é só avisar.');
+  return {diag, op, msg:par.join('\n\n')};
+}
+function _dossieDoc(n, a){
+  const E=_escH; const pill={ok:['#E1F3E9','#1D7A4B'],warn:['#FDF0D8','#9A5A06'],idle:['#E8EEF5','#58677A']};
+  const hoje=new Date().toLocaleDateString('pt-BR');
+  const fatos=[['CNPJ',n.cnpj],['Abertura',n.abertura],['Natureza jurídica',n.natureza],['Porte',n.porte],['Capital social',n.capital],['Matriz / filial',n.matriz],['Telefone',n.telefone],['E-mail',n.email]];
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>
+  @page{size:A4;margin:12mm}
+  *{box-sizing:border-box}html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{margin:0;padding:22px;font:13.5px/1.55 Inter,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;color:#102C4D;background:#fff}
+  .tag{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#0876B9}
+  h1{font-size:28px;line-height:1.15;margin:6px 0 4px;font-weight:800;letter-spacing:-.02em}h1 em{font-style:normal;color:#0876B9}
+  h2{font-size:18px;margin:26px 0 10px;font-weight:800}
+  .sub{color:#566575;margin:0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .box{background:#F4F8FC;border-radius:12px;padding:10px 14px;break-inside:avoid}
+  .box small{display:block;font-size:11px;color:#58677A;font-weight:600}.box b{font-weight:600}
+  .full{grid-column:1/-1}
+  .pill{font-size:11px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap}
+  .row{display:flex;justify-content:space-between;gap:8px;align-items:center}
+  .res{font-weight:700;margin-top:8px}.nota{color:#566575;font-size:12.5px}
+  table{width:100%;border-collapse:collapse}td{padding:9px 12px;border-top:1px solid #DCE7F1;vertical-align:top}
+  td:first-child{width:34px;font-weight:800;color:#0876B9}
+  .cn span{display:inline-block;background:#fff;border:1px solid #DCE7F1;border-radius:7px;padding:2px 8px;margin:3px 4px 0 0;font-size:11.5px;color:#566575}
+  footer{margin-top:22px;border-top:1px solid #DCE7F1;padding-top:10px;color:#58677A;font-size:11.5px}
+  </style></head><body>
+  <div class="tag">Dossiê comercial · Labora Contabilidade e Gestão · ${hoje}</div>
+  <h1>${E(n.razao_social)}</h1>
+  <p class="sub">${E(n.endereco)}</p>
+  <h2>Diagnóstico</h2>
+  <div class="grid">${a.diag.map(d=>`<div class="box"><div class="row"><b>${E(d.t)}</b><span class="pill" style="background:${pill[d.pill[0]][0]};color:${pill[d.pill[0]][1]}">${E(d.pill[1])}</span></div><div class="res">${E(d.res)}</div><div class="nota">${E(d.nota)}</div></div>`).join('')}</div>
+  <h2>Oportunidades de serviço</h2>
+  <div class="box" style="padding:2px 4px"><table>${a.op.map((o,i)=>`<tr><td>${i+1}</td><td><b>${E(o[0])}</b><div class="nota">${E(o[1])}</div></td></tr>`).join('')}</table></div>
+  <h2>Ficha da empresa</h2>
+  <div class="grid">${fatos.map(f=>`<div class="box"><small>${f[0]}</small><b>${E(f[1])}</b></div>`).join('')}
+    <div class="box full"><small>CNAE principal</small><b>${E(n.cnae)}</b><div class="cn">${(n.secundarios||[]).map(c=>`<span>${E(c)}</span>`).join('')}</div></div>
+    <div class="box full"><small>Quadro societário</small>${(n.socios||[]).map(q=>`<div><b>${E(q.nome)}</b> · ${E(q.qual)}</div>`).join('')||'—'}</div></div>
+  <footer>Fonte: ${E(n.fonte)} e consultas públicas (PGFN, Simples Nacional, Caixa), em ${hoje}. As conclusões dependem dos números reais da empresa.</footer>
+  </body></html>`;
+}
+window.gerarDossie = async function(){
+  const cnpj = document.getElementById('cnpj-input').value.replace(/\D/g,'');
+  const st = document.getElementById('dossie-status');
+  if(cnpj.length !== 14){ st.innerHTML = '<span style="color:#C0392B">Digite um CNPJ válido (14 dígitos).</span>'; return; }
+  const btn = document.getElementById('dossie-btn'); btn.disabled = true; btn.textContent = 'Gerando... (até 1 min)';
+  st.textContent = 'Consultando Receita, PGFN, Simples e FGTS...';
+  try{
+    const [n, deb] = await Promise.all([_buscarCnpjNorm(cnpj), chamarApiIA('/api/consulta-debitos', {cnpj})]);
+    const a = _dossieAnalise(n, deb);
+    document.getElementById('dossie-frame').srcdoc = _dossieDoc(n, a);
+    document.getElementById('dossie-msg').value = a.msg;
+    st.textContent = '';
+    openModal('modal-dossie');
+  }catch(e){
+    st.innerHTML = '<span style="color:#C0392B">'+_escH(e.message||'Erro ao gerar o dossiê.')+'</span>';
+  }finally{ btn.disabled=false; btn.textContent='📄 Gerar dossiê comercial'; }
+};
+window.imprimirDossie = function(){
+  const f=document.getElementById('dossie-frame');
+  try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){ alert('Não foi possível abrir a impressão. Tente de novo.'); }
+};
+window.copiarMsgDossie = function(){
+  const ta=document.getElementById('dossie-msg'), b=document.getElementById('dossie-copiar');
+  const ok=()=>{b.textContent='Copiado';setTimeout(()=>b.textContent='Copiar mensagem',2000)};
+  try{ navigator.clipboard.writeText(ta.value).then(ok,()=>{ta.select();document.execCommand('copy');ok();}); }catch(e){ ta.select(); try{document.execCommand('copy');ok();}catch(_){} }
 };
 </script>
 </div><!-- fim #admin-app -->
