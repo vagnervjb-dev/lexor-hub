@@ -43,7 +43,9 @@ const titulo = (s) => String(s || '').toLowerCase().replace(/(^|\s)\S/g, (c) => 
 
 // Nome curto para falar da empresa: fantasia, senão razão social sem sufixo societário.
 export function nomeCurto(n) {
-  const base = n.nome_fantasia || String(n.razao_social || '').replace(/\b(LTDA|EIRELI|S\.?A\.?|ME|EPP|MEI)\b\.?/gi, '').trim();
+  // A Receita devolve asteriscos quando a empresa não tem nome fantasia.
+  const fantasia = /[A-Za-zÀ-ÿ0-9]/.test(n.nome_fantasia || '') && !/\*/.test(n.nome_fantasia) ? n.nome_fantasia : '';
+  const base = fantasia || String(n.razao_social || '').replace(/\b(LTDA|EIRELI|S\.?A\.?|ME|EPP|MEI)\b\.?/gi, '').trim();
   return titulo(base) || 'a empresa';
 }
 
